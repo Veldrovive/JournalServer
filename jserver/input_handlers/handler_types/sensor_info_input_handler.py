@@ -33,6 +33,7 @@ class SensorInfoInputHandler(InputHandler):
 
         self.sensor_info_server = config.sensor_info_server.rstrip("/")
         self.data_source_id = config.data_source_id
+        self.min_timestamp_ms = config.min_timestamp_ms
 
         self.ready = False
         self.current_processing_source_uuids = set()
@@ -82,6 +83,8 @@ class SensorInfoInputHandler(InputHandler):
         for source_uuid in data.source_uuids:
             metadata = data.metadatas[source_uuid]
             last_updated = metadata.last_updated
+            if last_updated < self.min_timestamp_ms:
+                continue
             being_processed = source_uuid in self.current_processing_source_uuids
             if self.collection.count_documents({"source_uuid": source_uuid, "timestamp": {"$gte": last_updated}}) == 0 and not being_processed:
                 unsaved_sources.append((source_uuid, last_updated))
