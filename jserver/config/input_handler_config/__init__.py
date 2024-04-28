@@ -1,0 +1,6 @@
+from .input_handler_config import InputHandlerConfig
+from .input_handler_config import TestInputHandlerConfig
+from .day_one_handler_config import DayOneHandlerConfig
+from .sensor_info_handler_config import SensorInfoHandlerConfig
+
+AllInputHandlerConfig = TestInputHandlerConfig | DayOneHandlerConfig | SensorInfoHandlerConfig

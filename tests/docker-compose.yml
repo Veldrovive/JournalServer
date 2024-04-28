@@ -1,0 +1,31 @@
+version: '3'
+name: journal-pytest
+
+services:
+  minio:
+    image: minio/minio
+    container_name: journal-v3-minio-pytest
+    ports:
+      - "4600:9000"
+      - "4690:9090"
+    environment:
+      MINIO_ROOT_USER: journal_storage_user
+      MINIO_ROOT_PASSWORD: journal_storage_password
+    volumes:
+      - mongo-data-pytest:/data
+    command: server /data --console-address ":9090"
+
+  mongo:
+    image: mongo
+    container_name: journal-v3-mongo-pytest
+    ports:
+      - "4601:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - fakes3-data-pytest:/data/db
+
+volumes:
+  fakes3-data-pytest:
+  mongo-data-pytest:

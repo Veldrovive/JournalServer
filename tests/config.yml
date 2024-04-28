@@ -1,0 +1,62 @@
+storage_manager:
+  database_manager:
+    manager_type: "mongo"
+    host: "localhost"
+    port: 4601
+    username: "root"
+    password: "password"
+    database: "jprocess-dev"
+
+  file_storage_manager:
+    manager_type: "minio"
+    host: "localhost"
+    port: 4600
+    username: "journal_storage_user"
+    password: "journal_storage_password"
+    bucket: "jprocess-dev"
+
+input_config:
+  input_dir: "/Users/aidan/projects/2024/spring/journal-processor-v3/backend/tests/inputs"
+  input_handlers:
+    - handler_type: "test"
+      handler_uuid: "test_input_handler"
+      handler_name: "Test Input Handler"
+      trigger_check_interval: 1
+      test_file_folder: "/Users/aidan/projects/2024/spring/journal-processor-v3/backend/tests/files"
+    - handler_type: "day_one"
+      handler_uuid: "day_one_handler"
+      handler_name: "Day One Handler"
+
+output_config:
+  port: 4650
+  host: "0.0.0.0"
+
+# inputs:
+#   input_dir: "inputs"
+#   input_handlers:
+#     - handler_type: "day_one"
+#       input_subdir: "day_one"
+#       input_source_id: "day_one"
+#       trigger_check_interval: 1
+#     - handler_type: "youtube_watch_history"
+#       input_subdir: "youtube_watch_history"
+#       input_source_id: "youtube_watch_history"
+#       trigger_check_interval: 1
+#     - handler_type: "test"
+#       input_subdir: "test"
+#       input_source_id: "test"
+#       trigger_check_interval: 1
+#       test_file_folder: "tests/files"
+#     - handler_type: "sensor_info"
+#       input_subdir: "fitbit_sensor_info"
+#       input_source_id: "fitbit_sensors"
+#       trigger_check_interval: 10
+#       data_source_id: "fitbit"
+#       sensor_info_server: "http://localhost:2998"
+#       database_config:
+#         manager_type: "mongo"
+#         host: "localhost"
+#         port: 4601
+#         username: "root"
+#         password: "password"
+#         database: "jprocess-dev"
