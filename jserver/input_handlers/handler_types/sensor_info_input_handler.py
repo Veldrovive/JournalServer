@@ -35,6 +35,7 @@ class SensorInfoInputHandler(InputHandler):
         self.data_source_id = config.data_source_id
 
         self.ready = False
+        self.current_processing_source_uuids = set()
 
     def construct_endpoint(self, endpoint: str) -> str:
         """
@@ -81,7 +82,8 @@ class SensorInfoInputHandler(InputHandler):
         for source_uuid in data.source_uuids:
             metadata = data.metadatas[source_uuid]
             last_updated = metadata.last_updated
-            if self.collection.count_documents({"source_uuid": source_uuid, "timestamp": {"$gte": last_updated}}) == 0:
+            being_processed = source_uuid in self.current_processing_source_uuids
+            if self.collection.count_documents({"source_uuid": source_uuid, "timestamp": {"$gte": last_updated}}) == 0 and not being_processed:
                 unsaved_sources.append((source_uuid, last_updated))
         return unsaved_sources
 
@@ -108,6 +110,9 @@ class SensorInfoInputHandler(InputHandler):
         if len(unsaved_sources) == 0:
             logger.info("No new sources to parse")
             return
+
+        for source_uuid, _ in unsaved_sources:
+            self.current_processing_source_uuids.add(source_uuid)
 
         for source_uuid, timestamp in unsaved_sources:
             sensor_info = self.get_source_uuid_data(source_uuid)
