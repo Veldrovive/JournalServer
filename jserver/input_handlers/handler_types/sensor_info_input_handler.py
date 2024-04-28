@@ -146,6 +146,9 @@ class SensorInfoInputHandler(InputHandler):
 
             self.record_saved_source_uuid(source_uuid, timestamp)
 
+        for source_uuid, _ in unsaved_sources:
+            self.current_processing_source_uuids.remove(source_uuid)
+
     async def _on_trigger_request(self,entry_insertion_log: list[EntryInsertionLog], file: str | None = None, metadata: dict[str, str] | None = None) -> None:
         """
         """
