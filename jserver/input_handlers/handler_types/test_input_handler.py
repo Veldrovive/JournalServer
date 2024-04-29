@@ -13,6 +13,7 @@ from typing import Callable
 class TestInputHandler(InputHandler):
     _requires_db_connection = True
     _requires_input_folder = True
+    _takes_file_input = True
 
     def __init__(self, handler_id: str, config: TestInputHandlerConfig, on_entries_inserted: Callable[[list[EntryInsertionLog]], None]):
         super().__init__(handler_id, config, on_entries_inserted)

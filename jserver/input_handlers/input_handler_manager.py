@@ -77,7 +77,8 @@ class InputHandlerManager:
             handler_info[handler_id] = {
                 "config": self.handler_configs[handler_id].model_dump(),
                 "trigger_errors": [(time, str(e)) for time, e in self.trigger_errors[handler_id]],
-                "input_folder": str((self.input_folder / handler_id).absolute()),
+                "input_folder": str((self.input_folder / handler_id).absolute()) if handler._requires_input_folder else None,
+                "takes_file_input": handler._takes_file_input,
             }
         return handler_info
 

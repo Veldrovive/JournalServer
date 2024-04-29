@@ -87,6 +87,7 @@ def string_to_timedelta_and_clean(s):
 class DayOneInputHandler(InputHandler):
     _requires_db_connection = False
     _requires_input_folder = True
+    _takes_file_input = True
 
     def __init__(self, handler_id: str, config: DayOneHandlerConfig, on_entries_inserted: Callable[[list[EntryInsertionLog]], None]):
         super().__init__(handler_id, config, on_entries_inserted)

@@ -30,6 +30,7 @@ class EntryInsertionLog(BaseModel):
 class InputHandler(ABC):
     _requires_db_connection = False
     _requires_input_folder = False
+    _takes_file_input = False
 
     def __init__(
         self,
