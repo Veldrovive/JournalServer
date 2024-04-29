@@ -19,6 +19,10 @@ app.include_router(output_router, prefix="/output")
 async def ping():
     return JSONResponse(status_code=200, content={"message": "pong"})
 
+@app.get("/")
+async def root():
+    return JSONResponse(status_code=200, content={"message": "Hello World"})
+
 class AsyncServer:
     def __init__(self, config: Config):
         from uvicorn import Config as ServerConfig

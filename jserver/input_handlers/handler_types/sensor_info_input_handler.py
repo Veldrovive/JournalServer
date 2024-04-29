@@ -111,7 +111,7 @@ class SensorInfoInputHandler(InputHandler):
         unsaved_sources = self.get_unsaved_source_uuids()
         unsaved_sources = unsaved_sources[-10:]  # Only process 10 sources at a time
         if len(unsaved_sources) == 0:
-            logger.info("No new sources to parse")
+            logger.debug("No new sources to parse")
             return
 
         for source_uuid, _ in unsaved_sources:

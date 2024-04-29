@@ -32,6 +32,28 @@ class EntryManager:
         for entry_type in EntryType:
             assert entry_type in self.deletion_map, f"Entry type {entry_type} does not have a deletion function"
 
+        self.delete_batch = []
+        self.insert_batch = []
+        self.batching = False
+
+    ###### WIP ######
+    def start_batching(self):
+        """
+        Starts batching input entries
+        """
+        if self.batching:
+            raise RuntimeError("Already batching")
+        self.batching = True
+        self.input_batch = []
+        self.delete_batch = []
+
+    def commit_batching(self):
+        """
+        Commits the batched entries to the database
+        """
+        self.rmanager.batch_delete_entries(self.delete_batch)
+    ##########################
+
     def insert_entry(self, entry: Entry, mutate=True) -> bool:
         """
         Inserts an entry into the database

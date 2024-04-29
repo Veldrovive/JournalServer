@@ -79,12 +79,13 @@ class MongoDatabaseManager(DatabaseManager):
         """
         Returns a list of entry uuids that match the given filter
         """
+        logger.info(f"Searching for entries with filter: {filter}")
         query = {}
         # Filtering by start time
         if filter.timestamp_after is not None:
             query["start_time"] = { "$gte": filter.timestamp_after }
         if filter.timestamp_before is not None:
-            if "timestamp" in query:
+            if "start_time" in query:
                 query["start_time"]["$lte"] = filter.timestamp_before
             else:
                 query["start_time"] = { "$lte": filter.timestamp_before }
@@ -119,8 +120,9 @@ class MongoDatabaseManager(DatabaseManager):
                 query["group_id"] = {"$in": filter.group_ids}
 
         # Execute the query
-        logger.debug(f"Mongo Entry Database Query: {query}")
+        logger.info(f"Mongo Entry Database Query: {query}")
         entries = self.database.entries.find(query)
         entry_uuids = [entry["entry_uuid"] for entry in entries]
+        logger.info(f"Found {len(entry_uuids)} entries")
 
         return entry_uuids

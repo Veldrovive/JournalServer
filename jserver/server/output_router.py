@@ -24,8 +24,8 @@ async def root(
     start_time: int = Query(None),
     end_time: int | None = Query(None),
     type_whitelist: list[str] | None = Query(None),
-    input_source_ids: list[str] | None = Query(None),
-    source_uuids: list[str] | None = Query(None),
+    input_handler_ids: list[str] | None = Query(None),
+    group_ids: list[str] | None = Query(None),
 
     location_lat: float | None = Query(None),
     location_lon: float | None = Query(None),
@@ -44,8 +44,8 @@ async def root(
         timestamp_after=start_time,
         timestamp_before=end_time,
         entry_types=type_whitelist,
-        input_source_ids=input_source_ids,
-        source_uuids=source_uuids,
+        input_handler_ids=input_handler_ids,
+        group_ids=group_ids,
         location=location_filter,
     )
 
