@@ -37,7 +37,7 @@ class S3FileManager(FileManager):
 
         self.manager_config = manager_config
         host = self.manager_config.host
-        if host == 'localhost':
+        if host == 'localhost' and not config.dev:
             host = get_local_ip()
         port = self.manager_config.port
         username = self.manager_config.username

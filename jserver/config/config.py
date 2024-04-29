@@ -62,3 +62,4 @@ class Config(BaseModel):
     storage_manager: StorageManagerConfig
     input_config: InputConfig
     output_config: OutputConfig
+    dev: bool = False
