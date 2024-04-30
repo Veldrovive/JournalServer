@@ -187,8 +187,8 @@ class DayOneInputHandler(InputHandler):
         creation_date_str = journal_entry["creationDate"] # In the form YYY-MM-DDTHH:MM:SSZ
         creation_date_timezone = journal_entry["timeZone"] # Like America\/New_York
 
-        lat = journal_entry["location"]["latitude"]
-        lng = journal_entry["location"]["longitude"]
+        lat = journal_entry["location"]["latitude"] if "location" in journal_entry else None
+        lng = journal_entry["location"]["longitude"] if "location" in journal_entry else None
 
         journal_entry_uuid = journal_entry["uuid"]  # Used as the group_id
 
