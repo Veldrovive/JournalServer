@@ -440,7 +440,7 @@ class FitbitAPIInputHandler(InputHandler):
         if len(trackpoints) == 0:
             return activity_entry, geolocation_entries
 
-        def process_partition(partition: list[TCXTrackPointLocal], input_source_id: str, source_uuid: SourceUUID, order_index: int):
+        def process_partition(partition: list[TCXTrackPointLocal], order_index: int):
             if len(partition) == 0:
                 return
             latitude = sum([trackpoint.latitude for trackpoint in partition]) / len(partition)
@@ -470,11 +470,11 @@ class FitbitAPIInputHandler(InputHandler):
         for trackpoint in trackpoints:
             if trackpoint.time - start_time > timedelta(seconds=self.geolocation_downsample_period_s):
                 # We have reached the end of the partition
-                process_partition(current_partition, activity_entry.input_source_id, activity_entry.source_uuid, order_index)
+                process_partition(current_partition, order_index)
                 current_partition = []
                 start_time = trackpoint.time
             current_partition.append(trackpoint)
-        process_partition(current_partition, activity_entry.input_source_id, activity_entry.source_uuid, order_index)
+        process_partition(current_partition, order_index)
 
         return activity_entry, geolocation_entries
 
