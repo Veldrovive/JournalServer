@@ -419,6 +419,9 @@ class FitbitAPIInputHandler(InputHandler):
         In order to get the downsampled geolocation entries, we partition in the trackpoints into minute intervals
         For each of these intervals we take the average of the latitude, longitude, and altitude
         """
+        if activity.tcxLink is None:
+            logger.error(f"No TCX link for activity {activity.logId}")
+            return None, []
         activity_details = self.api.get_activity_details(activity)
         location = None
         if len(activity_details.activityTCXData.trackpoints) > 0:
@@ -500,6 +503,9 @@ class FitbitAPIInputHandler(InputHandler):
             logger.info(f"Processing activity {activity.logId}")
             try:
                 activity_entry, geolocation_entry = self.process_activity_to_entry(activity)
+                if activity_entry is None:
+                    logger.error(f"Error processing activity {activity.logId}")
+                    continue
                 activity_entries.append(activity_entry)
                 geolocation_entries.extend(geolocation_entry)
                 self.set_activity_processed(activity)
