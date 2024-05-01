@@ -3,3 +3,9 @@ class EntryNotFoundException(Exception):
 
 class EntryAlreadyExistsException(Exception):
     pass
+
+class InputHandlerNotFoundException(Exception):
+    pass
+
+class RPCNameNotFoundException(Exception):
+    pass

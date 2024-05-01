@@ -16,6 +16,7 @@ from jserver.config import Config, AllInputHandlerConfig
 from jserver.storage import ResourceManager
 from .handler_types import construct_input_handler
 from .input_handler import EntryInsertionLog, InputHandler
+from jserver.exceptions import *
 
 from jserver.utils.logger import setup_logging
 logger = setup_logging(__name__)
@@ -266,6 +267,19 @@ class InputHandlerManager:
                 # If we get a timeout error, we just continue because that means we did not get the stop event
                 pass
         logger.debug("Stopped input handler manager")
+
+    def handle_rpc_request(self, handler_id: str, rpc_name: str, data: dict):
+        """
+        Passes an RPC request to the correct input handler
+        """
+        if handler_id not in self.input_handlers:
+            raise InputHandlerNotFoundException(f"Handler {handler_id} not found")
+        handler = self.input_handlers[handler_id]
+        rpc_map = handler._rpc_map
+        if rpc_name not in rpc_map:
+            raise RPCNameNotFoundException(f"RPC {rpc_name} not found in handler {handler_id}")
+        rpc_func = rpc_map[rpc_name]
+        return rpc_func(data)
 
     def start_watching(self):
         """

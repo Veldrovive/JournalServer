@@ -45,6 +45,13 @@ class InputHandler(ABC):
 
         self.emanager = EntryManager()
 
+    @property
+    def _rpc_map(self):
+        """
+        A dictionary of RPC functions that the input handler can call
+        """
+        return {}
+
     def set_db_connection(self, db_connection):
         self.db_connection = db_connection
 

@@ -15,6 +15,7 @@ from fastapi import APIRouter, File, UploadFile, Form
 from fastapi.responses import JSONResponse
 
 from jserver.input_handlers import InputHandlerManager
+from jserver.exceptions import *
 
 from jserver.utils.logger import setup_logging
 logger = setup_logging(__name__)
@@ -92,3 +93,17 @@ async def request_trigger(handler_id: str, file: UploadFile = File(None), metada
         content["entry_insertion_log"] = [entry.model_dump(exclude={'entry'}) for entry in entry_insertion_log]
 
     return JSONResponse(status_code=status_code, content=content)
+
+@router.post("/{handler_id}/rpc/{rpc_name}")
+async def rpc_handler(handler_id: str, rpc_name: str, body: dict):
+    """
+    Takes an RPC request and sends it to the handler with the given handler_id
+    """
+    imanager = InputHandlerManager()
+    try:
+        res = imanager.handle_rpc_request(handler_id, rpc_name, body)
+        return JSONResponse(status_code=200, content=res)
+    except InputHandlerNotFoundException:
+        return JSONResponse(status_code=404, content={"error": f"Handler with id {handler_id} not found"})
+    except RPCNameNotFoundException:
+        return JSONResponse(status_code=404, content={"error": f"RPC with name {rpc_name} not found"})
