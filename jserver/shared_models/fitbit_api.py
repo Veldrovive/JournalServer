@@ -35,7 +35,7 @@ class Activity(BaseModel):
     originalDuration: int = Field(description="The initial length in time (milliseconds) that the exercise was recorded. This value will contain pauses during the exercise.")
     originalStartTime: str = Field(description="The initial start datetime that the exercise was recorded.")
     steps: int | None = Field(None, description="Number of steps taken during the exercise.")
-    tcxLink: str = Field(description="URL to download the TCX file.")
+    tcxLink: str | None = Field(None, description="URL to download the TCX file.")
 
 class TCXTrackPointLocal(BaseModel):
     time: datetime = Field(description="The time of the track point.")
