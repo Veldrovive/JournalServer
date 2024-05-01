@@ -12,6 +12,7 @@ class EntryType(str, Enum):
     ACCELEROMETER = "accelerometer"
     HEART_RATE = "heart_rate"
     SLEEP_STATE = "sleep_state"
+    FITBIT_ACTIVITY = "fitbit_activity"
 
 class EntryPrivacy(int, Enum):
     PUBLIC = 0

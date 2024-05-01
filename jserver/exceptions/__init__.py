@@ -9,3 +9,6 @@ class InputHandlerNotFoundException(Exception):
 
 class RPCNameNotFoundException(Exception):
     pass
+
+class FitbitUnauthorizedException(Exception):
+    pass

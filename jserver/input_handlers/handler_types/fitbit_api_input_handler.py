@@ -1,22 +1,46 @@
 import time
+from datetime import datetime, timedelta
+import base64
+import requests
+import tempfile
+import xml.etree.ElementTree
+from tcxreader.tcxreader import TCXReader, TCXExercise
 
 from jserver.config.input_handler_config import FitbitAPIHandlerConfig
-from jserver.input_handlers import InputHandler
+from jserver.input_handlers.input_handler import InputHandler, EntryInsertionLog
+from jserver.entries import FitbitActivityEntry, GeolocationEntry
+from jserver.entries.types.personal_sensor_entries import Geolocation
+
+from jserver.shared_models.fitbit_api import *
+from jserver.exceptions import *
 
 from jserver.utils.logger import setup_logging
 logger = setup_logging(__name__)
 
 from typing import Callable
 
+SCOPE = ['activity', 'heartrate', 'location', 'nutrition', 'profile', 'settings', 'sleep', 'social', 'weight']
+
 class FitbitAuth:
     """
 
     """
-    def __init__(self, key_collection):
+    def __init__(self, key_collection, client_id, client_secret):
         self.access_token = None
         self.refresh_token = None
         self.expires_at = None
         self.collection = key_collection
+
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.redirect_uri = None
+
+        self.auth_url = "https://www.fitbit.com/oauth2/authorize"
+        self.token_url = "https://api.fitbit.com/oauth2/token"
+
+    def get_authorization_url(self, redirect_uri):
+        self.redirect_uri = redirect_uri
+        return f"{self.auth_url}?response_type=code&client_id={self.client_id}&scope={'+'.join(SCOPE)}&redirect_uri={redirect_uri}"
 
     def make_request(self, url, method="GET", params=None, data=None, headers=None):
         """
@@ -44,6 +68,8 @@ class FitbitAuth:
         """
         Saves the tokens into the mongo database
         """
+        # Remove the previous tokens
+        self.collection.delete_many({})
         self.collection.insert_one({
             "access_token": self.access_token,
             "refresh_token": self.refresh_token,
@@ -56,15 +82,18 @@ class FitbitAuth:
         """
         tokens = self.collection.find_one()
         if tokens is None:
-            return None, None, None
+            return None, None, -1
         return tokens["access_token"], tokens["refresh_token"], tokens["expires_at"]
 
     def check_auth(self) -> bool:
         """
         Sends a request to `https://api.fitbit.com/1/user/-/profile.json` to attempt to get the current user's profile
         """
-        response = self.make_request("https://api.fitbit.com/1/user/-/profile.json")
-        return response.status_code == 200
+        try:
+            response = self.make_request("https://api.fitbit.com/1/user/-/profile.json")
+            return response.status_code == 200
+        except FitbitUnauthorizedException:
+            return False
 
     def attempt_auth(self):
         """
@@ -195,67 +224,16 @@ class FitbitAuth:
             self.refresh_token = refresh_token
             self.expires_at = expires_at
             self.save_tokens()
-            return True
+            res = self.attempt_auth()
+            return res
         return False
 
-
-
-class FitbitAPIInputHandler(InputHandler):
-    _requires_db_connection = True
-    _takes_file_input = False
-    _requires_input_folder = False
-
-    def __init__(self, handler_id: str, config: FitbitAPIHandlerConfig, on_entries_inserted: Callable[[list[EntryInsertionLog]], None], db_connection = None):
-        super().__init__(handler_id, config, on_entries_inserted, db_connection)
-
-        self.geolocation_downsample_period_s = geolocation_downsample_period_s
-        self.start_date = start_date
-
-        self.ready = False
-        self.set_up_database()
-
-        self.auth = FitbitAuth(self.key_store_collection)
-        authorized = self.auth.authorized()
-        logger.info(f"Authorized: {authorized}")
-
-        self.ready = True
-
-    @property
-    def _rpc_map(self):
-        return {
-            "set_auth_code": self.set_auth_code,
-        }
-
-    def get_state(self):
-        """
-        Gets the state of the input handler
-        """
-        authorized = self.auth.check_auth()
-        if authorized:
-            profile = self.get_profile()
-        else:
-            profile = None
-        return {
-            "authorized": authorized,
-            "profile": profile,
-        }
-
-    def set_up_database(self):
-        self.activity_collection = self.db_connection.get_collection("fitbit_activities")
-        self.key_store_collection = self.db_connection.get_collection("fitbit_key_store")
-
-        self.activity_collection.create_index("log_id", unique=True)
-
-    def set_auth_code(self, body):
-        """
-        Sets the authorization code
-        """
-        auth_code = body['auth_code']
-        res = self.auth.set_auth_code(auth_code)
-        return {"success": res}
+class FitbitAPI:
+    def __init__(self, authenticator: FitbitAuth):
+        self.authenticator = authenticator
 
     def get_profile(self):
-        response = self.auth.make_request("https://api.fitbit.com/1/user/-/profile.json")
+        response = self.authenticator.make_request("https://api.fitbit.com/1/user/-/profile.json")
         return response.json()["user"]
 
     def get_full_activity_log(self, start_date: datetime | None = None) -> list[Activity]:
@@ -269,7 +247,7 @@ class FitbitAPIInputHandler(InputHandler):
         start_date_str = start_date.strftime("%Y-%m-%d")
         current_url = f"https://api.fitbit.com/1/user/-/activities/list.json?afterDate={start_date_str}&sort=asc&limit=100&offset=0"
         while current_url is not None:
-            response = self.auth.make_request(current_url)
+            response = self.authenticator.make_request(current_url)
             json = response.json()
             if "activities" not in json:
                 print(json)
@@ -287,7 +265,7 @@ class FitbitAPIInputHandler(InputHandler):
         """
         Reads the TCX file for the given activity
         """
-        response = self.auth.make_request(activity.tcxLink)
+        response = self.authenticator.make_request(activity.tcxLink)
         return response.text
 
     def get_activity_details(self, activity: Activity) -> DetailedActivity:
@@ -310,6 +288,70 @@ class FitbitAPIInputHandler(InputHandler):
             activity=activity,
             activityTCXData=activity_details,
         )
+
+
+class FitbitAPIInputHandler(InputHandler):
+    _requires_db_connection = True
+    _takes_file_input = False
+    _requires_input_folder = False
+
+    def __init__(self, handler_id: str, config: FitbitAPIHandlerConfig, on_entries_inserted: Callable[[list[EntryInsertionLog]], None], db_connection = None):
+        super().__init__(handler_id, config, on_entries_inserted, db_connection)
+
+        self.geolocation_downsample_period_s = config.geolocation_downsample_period_s
+        self.start_date = config.start_date
+
+        self.ready = False
+        self.set_up_database()
+
+        self.auth = FitbitAuth(self.key_store_collection, config.client_id, config.client_secret)
+        authorized = self.auth.attempt_auth()
+        logger.info(f"Authorized: {authorized}")
+
+        self.api = FitbitAPI(self.auth)
+
+        self.ready = True
+
+    @property
+    def _rpc_map(self):
+        return {
+            "set_auth_code": self.set_auth_code,
+            "get_auth_url": self.get_auth_url,
+        }
+
+    def get_state(self):
+        """
+        Gets the state of the input handler
+        """
+        authorized = self.auth.check_auth()
+        if authorized:
+            profile = self.api.get_profile()
+        else:
+            profile = None
+        return {
+            "authorized": authorized,
+            "profile": profile,
+        }
+
+    def set_up_database(self):
+        self.activity_collection = self.db_connection.get_collection("fitbit_activities")
+        self.key_store_collection = self.db_connection.get_collection("fitbit_key_store")
+
+        self.activity_collection.create_index("log_id", unique=True)
+
+    def set_auth_code(self, body):
+        """
+        Sets the authorization code
+        """
+        auth_code = body['auth_code']
+        res = self.auth.set_auth_code(auth_code)
+        return {"success": res}
+
+    def get_auth_url(self, body: dict):
+        """
+        Gets the authorization URL
+        """
+        return {"url": self.auth.get_authorization_url(body['redirect_uri'])}
 
     def set_activity_processed(self, activity: Activity):
         """
@@ -340,13 +382,14 @@ class FitbitAPIInputHandler(InputHandler):
         start_time = datetime.fromisoformat(activity.originalStartTime)
         end_time = start_time + timedelta(milliseconds=activity.activeDuration)
         activity_entry = FitbitActivityEntry(
-            data=activity_details,
-            timestamp=int(round(start_time.timestamp() * 1000)),
-            end_time=int(round(end_time.timestamp() * 1000)),
-            input_source_id=self.input_source_id,
-            location=location,
-            order_index=0,
-            source_uuid=f"{activity.logId}",
+            data = activity,
+            start_time = int(round(start_time.timestamp() * 1000)),
+            end_time = int(round(end_time.timestamp() * 1000)),
+            latitude = location[0],
+            longitude = location[1],
+            group_id = activity.logId,
+            seq_id = 0,
+            input_handler_id = self.handler_id,
         )
         geolocation_entries = []
         trackpoints = activity_details.activityTCXData.trackpoints
@@ -366,13 +409,14 @@ class FitbitAPIInputHandler(InputHandler):
                 altitude=None,
             )
             geolocation_entry = GeolocationEntry(
-                data=location,
-                timestamp=int(round(start_time.timestamp() * 1000)),
-                end_time=int(round(end_time.timestamp() * 1000)),
-                location=(latitude, longitude),
-                input_source_id=input_source_id,
-                order_index=order_index,
-                source_uuid=source_uuid,
+                data = location,
+                start_time = int(round(start_time.timestamp() * 1000)),
+                end_time = int(round(end_time.timestamp() * 1000)),
+                latitude = latitude,
+                longitude = longitude,
+                group_id = activity.logId,
+                seq_id = order_index + 1,
+                input_handler_id = self.handler_id,
             )
             geolocation_entries.append(geolocation_entry)
 
@@ -423,11 +467,13 @@ class FitbitAPIInputHandler(InputHandler):
         """
         Triggers the input handler
         """
-        activity_entries, geolocation_entries = self.get_activity_entries()
-        for entry in activity_entries:
-            self.insert_entry(entry_insertion_log, entry)
-        for entry in geolocation_entries:
-            self.insert_entry(entry_insertion_log, entry)
+        logger.warning("Triggering Fitbit API input handler")
+        logger.info(f"Start Date: {self.start_date}")
+        # activity_entries, geolocation_entries = self.get_activity_entries()
+        # for entry in activity_entries:
+        #     self.insert_entry(entry_insertion_log, entry)
+        # for entry in geolocation_entries:
+        #     self.insert_entry(entry_insertion_log, entry)
 
     async def _on_trigger_request(self, entry_insertion_log: list[EntryInsertionLog], file: str | None = None, metadata: dict[str, str] | None = None):
         """

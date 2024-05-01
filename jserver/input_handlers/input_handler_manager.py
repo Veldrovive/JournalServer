@@ -95,7 +95,10 @@ class InputHandlerManager:
             on_entries_inserted_cb = lambda entry_insertion_log, handler_id=handler_id: self._on_entries_inserted(handler_id, entry_insertion_log)
             handler_obj_constructor = get_input_handler_constructor(handler_config)
             db_connection = self.get_db_connection(handler_id) if handler_obj_constructor._requires_db_connection else None
-            handler_obj = handler_obj_constructor(handler_id, handler_config, on_entries_inserted_cb, db_connection)
+            if handler_obj_constructor._requires_db_connection:
+                handler_obj = handler_obj_constructor(handler_id, handler_config, on_entries_inserted_cb, db_connection)
+            else:
+                handler_obj = handler_obj_constructor(handler_id, handler_config, on_entries_inserted_cb)
 
             self.input_handlers[handler_id] = handler_obj
             self.handler_configs[handler_id] = handler_config

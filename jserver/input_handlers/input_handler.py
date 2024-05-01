@@ -15,7 +15,7 @@ from jserver.config.input_handler_config import AllInputHandlerConfig
 from jserver.utils.logger import setup_logging
 logger = setup_logging(__name__)
 
-from typing import Callable
+from typing import Callable, Any
 
 class EntryInsertionLog(BaseModel):
     """
@@ -114,7 +114,7 @@ class InputHandler(ABC):
         await self._on_trigger_interval(entry_insertion_log)
         self.on_entries_inserted(entry_insertion_log)
 
-    def get_state(self):
+    def get_state(self) -> dict[str, Any]:
         """
         Returns the state of the input handler
 

@@ -16,8 +16,8 @@ class EntryManager:
         self.rmanager = ResourceManager()
 
         self.deletion_map = {
-            EntryType.TEXT: self.delete_non_file_entry,
-            EntryType.GENERIC_FILE: self.delete_file_entry,
+            EntryType.TEXT: self.delete_non_file_entry,  # Used when deleting the database entry is enough
+            EntryType.GENERIC_FILE: self.delete_file_entry,  # Also deles the file from the file store
             EntryType.TEXT_FILE: self.delete_file_entry,
             EntryType.IMAGE_FILE: self.delete_file_entry,
             EntryType.VIDEO_FILE: self.delete_file_entry,
@@ -26,7 +26,8 @@ class EntryManager:
             EntryType.GEOLOCATION: self.delete_non_file_entry,
             EntryType.ACCELEROMETER: self.delete_non_file_entry,
             EntryType.HEART_RATE: self.delete_non_file_entry,
-            EntryType.SLEEP_STATE: self.delete_non_file_entry
+            EntryType.SLEEP_STATE: self.delete_non_file_entry,
+            EntryType.FITBIT_ACTIVITY: self.delete_non_file_entry,
         }
         # Assert that all the entry types have a deletion function
         for entry_type in EntryType:
