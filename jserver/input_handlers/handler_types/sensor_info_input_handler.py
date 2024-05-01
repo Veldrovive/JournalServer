@@ -28,8 +28,8 @@ sensor_id_map = {
 class SensorInfoInputHandler(InputHandler):
     _requires_db_connection = True
 
-    def __init__(self, handler_id: str, config: SensorInfoHandlerConfig, on_entries_inserted: Callable[[list[EntryInsertionLog]], None]):
-        super().__init__(handler_id, config, on_entries_inserted)
+    def __init__(self, handler_id: str, config: SensorInfoHandlerConfig, on_entries_inserted: Callable[[list[EntryInsertionLog]], None], db_connection = None):
+        super().__init__(handler_id, config, on_entries_inserted, db_connection)
 
         self.sensor_info_server = config.sensor_info_server.rstrip("/")
         self.data_source_id = config.data_source_id
@@ -38,18 +38,15 @@ class SensorInfoInputHandler(InputHandler):
         self.ready = False
         self.current_processing_source_uuids = set()
 
+        self.set_up_database()
+        self.ready = True
+
     def construct_endpoint(self, endpoint: str) -> str:
         """
         Constructs an endpoint for the sensor info server
         If there is a double slash in the middle, it will be replaced with a single slash
         """
         return self.sensor_info_server + "/" + endpoint.lstrip("/")
-
-    def set_db_connection(self, db_connection):
-        super().set_db_connection(db_connection)
-
-        self.set_up_database()
-        self.ready = True
 
     def set_up_database(self):
         self.collection = self.db_connection.get_collection("sensor_info_sources")

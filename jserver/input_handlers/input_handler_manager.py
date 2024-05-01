@@ -14,7 +14,7 @@ import traceback
 
 from jserver.config import Config, AllInputHandlerConfig
 from jserver.storage import ResourceManager
-from .handler_types import construct_input_handler
+from .handler_types import get_input_handler_constructor
 from .input_handler import EntryInsertionLog, InputHandler
 from jserver.exceptions import *
 
@@ -93,11 +93,9 @@ class InputHandlerManager:
 
             # Force capture of the handler_id in the lambda by using a default argument (Apparently this is the official method https://stackoverflow.com/a/2295372)
             on_entries_inserted_cb = lambda entry_insertion_log, handler_id=handler_id: self._on_entries_inserted(handler_id, entry_insertion_log)
-            handler_obj = construct_input_handler(handler_config, on_entries_inserted_cb)
-
-            if handler_obj._requires_db_connection:
-                logger.info(f"Setting up database connection for input handler {handler_id}")
-                handler_obj.set_db_connection(self.get_db_connection(handler_id))
+            handler_obj_constructor = get_input_handler_constructor(handler_config)
+            db_connection = self.get_db_connection(handler_id) if handler_obj_constructor._requires_db_connection else None
+            handler_obj = handler_obj_constructor(handler_id, handler_config, on_entries_inserted_cb, db_connection)
 
             self.input_handlers[handler_id] = handler_obj
             self.handler_configs[handler_id] = handler_config

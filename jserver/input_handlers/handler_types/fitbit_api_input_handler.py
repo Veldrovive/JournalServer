@@ -1,21 +1,22 @@
 import time
 
+from jserver.config.input_handler_config import FitbitAPIHandlerConfig
 from jserver.input_handlers import InputHandler
 
 from jserver.utils.logger import setup_logging
 logger = setup_logging(__name__)
 
+from typing import Callable
+
 class FitbitAuth:
     """
 
     """
-    def __init__(self):
+    def __init__(self, key_collection):
         self.access_token = None
         self.refresh_token = None
         self.expires_at = None
-
-    def set_db_collection(self, db_collection):
-        self.collection = db_collection
+        self.collection = key_collection
 
     def make_request(self, url, method="GET", params=None, data=None, headers=None):
         """
@@ -43,16 +44,27 @@ class FitbitAuth:
         """
         Saves the tokens into the mongo database
         """
+        self.collection.insert_one({
+            "access_token": self.access_token,
+            "refresh_token": self.refresh_token,
+            "expires_at": self.expires_at,
+        })
 
     def recall_tokens(self):
         """
         Gets the previous tokens from the mongo database
         """
+        tokens = self.collection.find_one()
+        if tokens is None:
+            return None, None, None
+        return tokens["access_token"], tokens["refresh_token"], tokens["expires_at"]
 
     def check_auth(self) -> bool:
         """
         Sends a request to `https://api.fitbit.com/1/user/-/profile.json` to attempt to get the current user's profile
         """
+        response = self.make_request("https://api.fitbit.com/1/user/-/profile.json")
+        return response.status_code == 200
 
     def attempt_auth(self):
         """
@@ -193,15 +205,20 @@ class FitbitAPIInputHandler(InputHandler):
     _takes_file_input = False
     _requires_input_folder = False
 
-    def __init__(self, handler_id, config, on_entries_inserted):
-        super().__init__(handler_id, config, on_entries_inserted)
+    def __init__(self, handler_id: str, config: FitbitAPIHandlerConfig, on_entries_inserted: Callable[[list[EntryInsertionLog]], None], db_connection = None):
+        super().__init__(handler_id, config, on_entries_inserted, db_connection)
 
         self.geolocation_downsample_period_s = geolocation_downsample_period_s
         self.start_date = start_date
 
-        self.auth = FitbitAuth()
-        authorized = self.auth.authorized
-        logger.info(f"Fitbit API Input Handler initialized. Authorized: {authorized}")
+        self.ready = False
+        self.set_up_database()
+
+        self.auth = FitbitAuth(self.key_store_collection)
+        authorized = self.auth.authorized()
+        logger.info(f"Authorized: {authorized}")
+
+        self.ready = True
 
     @property
     def _rpc_map(self):
@@ -223,20 +240,11 @@ class FitbitAPIInputHandler(InputHandler):
             "profile": profile,
         }
 
-    def set_db_connection(self, db_connection):
-        super().set_db_connection(db_connection)
-
-        self.set_up_database()
-        self.ready = True
-
     def set_up_database(self):
         self.activity_collection = self.db_connection.get_collection("fitbit_activities")
         self.key_store_collection = self.db_connection.get_collection("fitbit_key_store")
 
         self.activity_collection.create_index("log_id", unique=True)
-
-        self.auth.set_db_collection(self.key_store_collection)
-        self.auth.attempt_auth()
 
     def set_auth_code(self, body):
         """

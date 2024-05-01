@@ -37,11 +37,12 @@ class InputHandler(ABC):
         handler_id: str,
         config: AllInputHandlerConfig,
         on_entries_inserted: Callable[[list[EntryInsertionLog]], None],
+        db_connection = None
     ):
         self.handler_id = handler_id
         self.config = config
         self.on_entries_inserted = on_entries_inserted
-        self.db_connection = None
+        self.db_connection = db_connection
 
         self.emanager = EntryManager()
 
@@ -51,9 +52,6 @@ class InputHandler(ABC):
         A dictionary of RPC functions that the input handler can call
         """
         return {}
-
-    def set_db_connection(self, db_connection):
-        self.db_connection = db_connection
 
     def insert_entry(self, entry_insertion_log: list[EntryInsertionLog], entry: Entry, mutate=True):
         """

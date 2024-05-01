@@ -6,8 +6,24 @@ from jserver.config.input_handler_config import *
 from .test_input_handler import TestInputHandler
 from .day_one_input_handler import DayOneInputHandler
 from .sensor_info_input_handler import SensorInfoInputHandler
+from .fitbit_api_input_handler import FitbitAPIInputHandler
 
 from typing import Callable
+
+def get_input_handler_constructor(handler_config: AllInputHandlerConfig):
+    """
+    Returns the input handler type based on the input handler config type
+    """
+    if isinstance(handler_config, TestInputHandlerConfig):
+        return TestInputHandler
+    elif isinstance(handler_config, DayOneHandlerConfig):
+        return DayOneInputHandler
+    elif isinstance(handler_config, SensorInfoHandlerConfig):
+        return SensorInfoInputHandler
+    elif isinstance(handler_config, FitbitAPIHandlerConfig):
+        return FitbitAPIInputHandler
+    else:
+        raise ValueError(f"Unknown input handler config type: {handler_config}")
 
 def construct_input_handler(handler_config: AllInputHandlerConfig, on_entries_inserted_cb: Callable):
     """
@@ -20,5 +36,7 @@ def construct_input_handler(handler_config: AllInputHandlerConfig, on_entries_in
         return DayOneInputHandler(handler_id, handler_config, on_entries_inserted_cb)
     elif isinstance(handler_config, SensorInfoHandlerConfig):
         return SensorInfoInputHandler(handler_id, handler_config, on_entries_inserted_cb)
+    elif isinstance(handler_config, FitbitAPIHandlerConfig):
+        return FitbitAPIInputHandler(handler_id, handler_config, on_entries_inserted_cb)
     else:
         raise ValueError(f"Unknown input handler config type: {handler_config}")
