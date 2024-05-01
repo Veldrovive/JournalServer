@@ -92,11 +92,12 @@ class MongoDatabaseManager(DatabaseManager):
 
         # Filtering by location
         if filter.location is not None:
-            center = filter.location.center
-            radius = filter.location.radius
-            # We are going to use a square filter for now
-            query["latitude"] = {"$gte": center[0] - radius, "$lte": center[0] + radius}
-            query["longitude"] = {"$gte": center[1] - radius, "$lte": center[1] + radius}
+            min_lat = filter.location.min_lat
+            max_lat = filter.location.max_lat
+            min_lng = filter.location.min_lng
+            max_lng = filter.location.max_lng
+            query["latitude"] = {"$gte": min_lat, "$lte": max_lat}
+            query["longitude"] = {"$gte": min_lng, "$lte": max_lng}
 
         # Filtering by entry type
         if filter.entry_types is not None:
@@ -121,7 +122,7 @@ class MongoDatabaseManager(DatabaseManager):
 
         # Execute the query
         logger.info(f"Mongo Entry Database Query: {query}")
-        entries = self.database.entries.find(query)
+        entries = self.database.entries.find(query).sort("start_time", 1)
         entry_uuids = [entry["entry_uuid"] for entry in entries]
         logger.info(f"Found {len(entry_uuids)} entries")
 

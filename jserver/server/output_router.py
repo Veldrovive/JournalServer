@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from jserver.storage import ResourceManager
 from jserver.entries.output import OutputEntry, entry_to_output
-from jserver.storage.primitives import OutputFilter
+from jserver.storage.primitives import OutputFilter, LocationFilter
 
 from jserver.utils.logger import setup_logging
 logger = setup_logging(__name__)
@@ -27,17 +27,20 @@ async def root(
     input_handler_ids: list[str] | None = Query(None),
     group_ids: list[str] | None = Query(None),
 
-    location_lat: float | None = Query(None),
-    location_lon: float | None = Query(None),
-    location_radius: float | None = Query(None),
+    min_lat: float | None = Query(None),
+    max_lat: float | None = Query(None),
+    min_lng: float | None = Query(None),
+    max_lng: float | None = Query(None),
 ):
     rmanager = ResourceManager()  # Get a reference to the singleton instance
 
     location_filter = None
-    if location_lat is not None and location_lon is not None and location_radius is not None:
+    if min_lat is not None and max_lat is not None and min_lng is not None and max_lng is not None:
         location_filter = LocationFilter(
-            center=(location_lat, location_lon),
-            radius=location_radius,
+            min_lat=min_lat,
+            max_lat=max_lat,
+            min_lng=min_lng,
+            max_lng=max_lng,
         )
 
     filter = OutputFilter(

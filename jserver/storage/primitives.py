@@ -1,8 +1,10 @@
 from pydantic import BaseModel, Field
 
 class LocationFilter(BaseModel):
-    center: tuple[float, float] = Field(..., description="The center of the location filter in lat lon.")
-    radius: float = Field(..., description="The half side length of the square location filter.")
+    min_lat: float = Field(..., description="The minimum latitude of the location filter.")
+    max_lat: float = Field(..., description="The maximum latitude of the location filter.")
+    min_lng: float = Field(..., description="The minimum longitude of the location filter.")
+    max_lng: float = Field(..., description="The maximum longitude of the location filter.")
 
 class OutputFilter(BaseModel):
     """
