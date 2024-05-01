@@ -92,6 +92,12 @@ class DayOneInputHandler(InputHandler):
     def __init__(self, handler_id: str, config: DayOneHandlerConfig, on_entries_inserted: Callable[[list[EntryInsertionLog]], None]):
         super().__init__(handler_id, config, on_entries_inserted)
         self.config = config
+        self.trigger_stage = "Idle"
+
+    def get_state(self):
+        return {
+            "trigger_stage": self.trigger_stage
+        }
 
     def verify_zip_file(self, file_path: Path):
         """
@@ -140,6 +146,7 @@ class DayOneInputHandler(InputHandler):
         Called by trigger handlers to do the heavy lifting of processing a zip file and inserting the entries into the database
         """
         # We will extract the zip file to a temporary directory
+        self.trigger_stage = "Extracting"
         with tempfile.TemporaryDirectory() as temp_dir:
             dir_path = Path(temp_dir)
             # Extract the zip file
@@ -162,11 +169,14 @@ class DayOneInputHandler(InputHandler):
                 journal_data = json.load(f)
 
             entries = journal_data.get("entries", [])
-            for entry in entries:
+            num_entries = len(entries)
+            for i, entry in enumerate(entries):
                 if "text" not in entry:
                     logger.debug("Encountered empty entry")
                     continue
+                self.trigger_stage = f"Removing Existing Entry {i+1}/{num_entries}"
                 await self.remove_existing_journal_entry(entry)
+                self.trigger_stage = f"Processing Entry {i+1}/{num_entries}"
                 await self.process_journal_entry(entry_insertion_log, entry, dir_path)
 
     async def remove_existing_journal_entry(self, journal_entry: dict):
