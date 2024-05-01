@@ -5,6 +5,7 @@ import requests
 import tempfile
 import xml.etree.ElementTree
 from tcxreader.tcxreader import TCXReader, TCXExercise
+from pydantic import ValidationError
 
 from jserver.config.input_handler_config import FitbitAPIHandlerConfig
 from jserver.input_handlers.input_handler import InputHandler, EntryInsertionLog
@@ -280,7 +281,13 @@ class FitbitAPI:
                 print(json)
                 raise Exception(f"Error getting activities: {json}")
             for activity in json["activities"]:
-                activity = Activity.model_validate(activity)
+                try:
+                    activity = Activity.model_validate(activity)
+                except ValidationError as e:
+                    # Log the entire json and re-raise the exception
+                    logger.error(f"Error validating activity: {activity}")
+                    raise e
+
                 full_activity_log.append(activity)
             pagination = Pagination.model_validate(json["pagination"])
             current_url = pagination.next

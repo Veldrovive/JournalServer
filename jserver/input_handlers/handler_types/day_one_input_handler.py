@@ -147,6 +147,7 @@ class DayOneInputHandler(InputHandler):
         """
         # We will extract the zip file to a temporary directory
         self.trigger_stage = "Extracting"
+        asyncio.sleep(2)  # Sleep for a couple seconds to allow other processes to finish
         with tempfile.TemporaryDirectory() as temp_dir:
             dir_path = Path(temp_dir)
             # Extract the zip file
@@ -171,6 +172,7 @@ class DayOneInputHandler(InputHandler):
             entries = journal_data.get("entries", [])
             num_entries = len(entries)
             for i, entry in enumerate(entries):
+                asyncio.sleep(0)  # Yield to other tasks
                 if "text" not in entry:
                     logger.debug("Encountered empty entry")
                     continue
