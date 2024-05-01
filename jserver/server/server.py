@@ -34,7 +34,10 @@ class AsyncServer:
             logger.warning(f"Using CORS: {cors}")
             app.add_middleware(
                 CORSMiddleware,
-                allow_origins=cors,
+                allow_origins=cors,  # Adjust this to the domains you expect requests from
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
             )
         self.config = ServerConfig(app=app, host=host, port=port, loop="none")
         self.server = Server(config=self.config)
