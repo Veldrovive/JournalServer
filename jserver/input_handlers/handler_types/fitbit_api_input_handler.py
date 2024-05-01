@@ -480,6 +480,10 @@ class FitbitAPIInputHandler(InputHandler):
         except ToManyRequestsException as e:
             logger.error(f"Too many requests: {e}")
             return [], []
+        except FitbitUnauthorizedException as e:
+            logger.error(f"Unauthorized: {e}")
+            return [], []
+
         activity_entries = []
         geolocation_entries = []
         for activity in activities:
@@ -496,6 +500,9 @@ class FitbitAPIInputHandler(InputHandler):
                 logger.error(f"Error parsing activity {activity.logId}: {e}")
             except ToManyRequestsException as e:
                 logger.error(f"Too many requests: {e}")
+                break
+            except FitbitUnauthorizedException as e:
+                logger.error(f"Unauthorized: {e}")
                 break
 
         return activity_entries, geolocation_entries
