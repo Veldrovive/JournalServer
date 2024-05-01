@@ -12,3 +12,6 @@ class RPCNameNotFoundException(Exception):
 
 class FitbitUnauthorizedException(Exception):
     pass
+
+class ToManyRequestsException(Exception):
+    pass

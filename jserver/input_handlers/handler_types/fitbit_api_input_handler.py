@@ -38,6 +38,9 @@ class FitbitAuth:
         self.auth_url = "https://www.fitbit.com/oauth2/authorize"
         self.token_url = "https://api.fitbit.com/oauth2/token"
 
+        self.remaining_requests = -1
+        self.seconds_till_reset = -1
+
     def get_authorization_url(self, redirect_uri):
         self.redirect_uri = redirect_uri
         return f"{self.auth_url}?response_type=code&client_id={self.client_id}&scope={'+'.join(SCOPE)}&redirect_uri={redirect_uri}"
@@ -46,23 +49,38 @@ class FitbitAuth:
         """
         Makes a request to the given URL with the given method and parameters.
         """
+        logger.info(f"Making request to {url}")
         if self.access_token is None:
-            raise FitbitUnauthorizedException()
+            raise FitbitUnauthorizedException("No access token. User must authenticate.")
         if headers is None:
             headers = {}
         headers['Authorization'] = f"Bearer {self.access_token}"
         response = requests.request(method, url, params=params, data=data, headers=headers)
-        if response.text == "Too Many Requests":
+        # The headers contains a `Fitbit-Rate-Limit-Limit`, `Fitbit-Rate-Limit-Remaining`, `Fitbit-Rate-Limit-Reset`
+        # We extract those
+        rate_limit = {
+            "limit": response.headers.get("Fitbit-Rate-Limit-Limit"),
+            "remaining": response.headers.get("Fitbit-Rate-Limit-Remaining"),
+            "reset": response.headers.get("Fitbit-Rate-Limit-Reset"),
+        }
+        self.remaining_requests = int(rate_limit["remaining"])
+        self.seconds_till_reset = int(rate_limit["reset"])
+        logger.info(f"Rate Limit: {rate_limit}")
+        if rate_limit["remaining"] == '0':
             raise ToManyRequestsException()
         return response
 
-    def authorized(self):
+    def check_token(self):
         """
-        Gets whether the use is authorized
+        Returns true if the token is valid
         """
-        if self.access_token is not None and self.refresh_token is not None and self.expires_at is not None:
-            return self.check_auth()
-        return False
+        if self.access_token is None:
+            return False
+        if self.refresh_token is None:
+            return False
+        if self.expires_at < time.time():
+            return False
+        return True
 
     def save_tokens(self):
         """
@@ -91,8 +109,14 @@ class FitbitAuth:
         """
         try:
             response = self.make_request("https://api.fitbit.com/1/user/-/profile.json")
-            return response.status_code == 200
-        except FitbitUnauthorizedException:
+            if response.status_code == 200:
+                return True
+            else:
+                res_json = response.json()
+                logger.error(f"Failed to authenticate user. Got response: {res_json}")
+                return False
+        except FitbitUnauthorizedException as e:
+            logger.error(f"Failed to authenticate user. Got unauthorized exception: {e}")
             return False
 
     def attempt_auth(self):
@@ -120,7 +144,7 @@ class FitbitAuth:
         # Attempt to refresh the token
         logger.info('Refreshing token...')
         if self.refresh_token is not None:
-            refreshed = self.refresh_token()
+            refreshed = self.req_refresh_token()
             if refreshed:
                 logger.info(f"Token refreshed. New token expires at {self.expires_at}.")
                 if self.check_auth():
@@ -138,7 +162,7 @@ class FitbitAuth:
         self.expires_at = None
         return False
 
-    def refresh_token(self):
+    def req_refresh_token(self):
         """
         Refreshes the token
         """
@@ -202,6 +226,7 @@ class FitbitAuth:
             "Authorization": f"Basic {client_id_secret_base64_str}"
         }
 
+        res_json = None
         try:
             response = requests.post(self.token_url, data=body, headers=headers)
             res_json = response.json()
@@ -210,8 +235,10 @@ class FitbitAuth:
             expires_in = res_json['expires_in']
             expires_at = time.time() + expires_in
 
+            logger.info(f"Got token: {access_token}, {refresh_token}, {expires_at}")
             return access_token, refresh_token, expires_at
         except KeyError:
+            logger.error(f"Error getting token: {res_json}")
             return None, None, None
 
     def set_auth_code(self, auth_code):
@@ -305,10 +332,18 @@ class FitbitAPIInputHandler(InputHandler):
         self.set_up_database()
 
         self.auth = FitbitAuth(self.key_store_collection, config.client_id, config.client_secret)
-        authorized = self.auth.attempt_auth()
-        logger.info(f"Authorized: {authorized}")
-
         self.api = FitbitAPI(self.auth)
+        try:
+            authorized = self.auth.attempt_auth()
+            logger.info(f"Authorized: {authorized}")
+            if authorized:
+                self.profile = self.api.get_profile()
+            else:
+                self.profile = None
+        except ToManyRequestsException as e:
+            logger.error(f"Too many requests: {e}")
+            self.profile = None
+
 
         self.ready = True
 
@@ -323,14 +358,12 @@ class FitbitAPIInputHandler(InputHandler):
         """
         Gets the state of the input handler
         """
-        authorized = self.auth.check_auth()
-        if authorized:
-            profile = self.api.get_profile()
-        else:
-            profile = None
         return {
-            "authorized": authorized,
-            "profile": profile,
+            "rate_limited": self.auth.remaining_requests == 0,
+            "remaining_requests": self.auth.remaining_requests,
+            "seconds_till_reset": self.auth.seconds_till_reset,
+            "authorized": self.auth.check_token(),
+            "profile": self.profile,
         }
 
     def set_up_database(self):
@@ -345,6 +378,10 @@ class FitbitAPIInputHandler(InputHandler):
         """
         auth_code = body['auth_code']
         res = self.auth.set_auth_code(auth_code)
+        if res:
+            self.profile = self.api.get_profile()
+        else:
+            self.profile = None
         return {"success": res}
 
     def get_auth_url(self, body: dict):
@@ -385,9 +422,9 @@ class FitbitAPIInputHandler(InputHandler):
             data = activity,
             start_time = int(round(start_time.timestamp() * 1000)),
             end_time = int(round(end_time.timestamp() * 1000)),
-            latitude = location[0],
-            longitude = location[1],
-            group_id = activity.logId,
+            latitude = location[0] if location is not None else None,
+            longitude = location[1] if location is not None else None,
+            group_id = str(activity.logId),
             seq_id = 0,
             input_handler_id = self.handler_id,
         )
@@ -414,7 +451,7 @@ class FitbitAPIInputHandler(InputHandler):
                 end_time = int(round(end_time.timestamp() * 1000)),
                 latitude = latitude,
                 longitude = longitude,
-                group_id = activity.logId,
+                group_id = str(activity.logId),
                 seq_id = order_index + 1,
                 input_handler_id = self.handler_id,
             )
@@ -469,11 +506,12 @@ class FitbitAPIInputHandler(InputHandler):
         """
         logger.warning("Triggering Fitbit API input handler")
         logger.info(f"Start Date: {self.start_date}")
-        # activity_entries, geolocation_entries = self.get_activity_entries()
-        # for entry in activity_entries:
-        #     self.insert_entry(entry_insertion_log, entry)
-        # for entry in geolocation_entries:
-        #     self.insert_entry(entry_insertion_log, entry)
+        activity_entries, geolocation_entries = self.get_activity_entries()
+        logger.info(f"Got {len(activity_entries)} activity entries and {len(geolocation_entries)} geolocation entries")
+        for entry in activity_entries:
+            self.insert_entry(entry_insertion_log, entry)
+        for entry in geolocation_entries:
+            self.insert_entry(entry_insertion_log, entry)
 
     async def _on_trigger_request(self, entry_insertion_log: list[EntryInsertionLog], file: str | None = None, metadata: dict[str, str] | None = None):
         """

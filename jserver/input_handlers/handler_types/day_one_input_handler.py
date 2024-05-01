@@ -178,6 +178,7 @@ class DayOneInputHandler(InputHandler):
                 await self.remove_existing_journal_entry(entry)
                 self.trigger_stage = f"Processing Entry {i+1}/{num_entries}"
                 await self.process_journal_entry(entry_insertion_log, entry, dir_path)
+            self.trigger_stage = "Idle"
 
     async def remove_existing_journal_entry(self, journal_entry: dict):
         """
