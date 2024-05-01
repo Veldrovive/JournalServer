@@ -109,6 +109,14 @@ class InputHandler(ABC):
         await self._on_trigger_interval(entry_insertion_log)
         self.on_entries_inserted(entry_insertion_log)
 
+    def get_state(self):
+        """
+        Returns the state of the input handler
+
+        Used to pass the state to the frontend
+        """
+        return {}
+
     @abstractmethod
     async def _on_trigger_request(self, entry_insertion_log: list[EntryInsertionLog], file: str | None = None, metadata: dict[str, str] | None = None) -> None:
         """
