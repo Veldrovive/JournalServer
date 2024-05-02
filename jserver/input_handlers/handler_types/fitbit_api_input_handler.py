@@ -512,9 +512,11 @@ class FitbitAPIInputHandler(InputHandler):
 
         activity_entries = []
         geolocation_entries = []
+        skipped_activities = []
         for activity in activities:
             if self.check_activity_processed(activity):
-                logger.info(f"Skipping activity {activity.logId}")
+                # logger.info(f"Skipping activity {activity.logId}")
+                skipped_activities.append(activity)
                 continue
             logger.info(f"Processing activity {activity.logId}")
             try:
@@ -533,6 +535,8 @@ class FitbitAPIInputHandler(InputHandler):
             except FitbitUnauthorizedException as e:
                 logger.error(f"Unauthorized: {e}")
                 break
+        if len(skipped_activities) > 0:
+            logger.info(f"Skipped {len(skipped_activities)} activities")
 
         return activity_entries, geolocation_entries
 
