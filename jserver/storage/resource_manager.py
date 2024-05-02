@@ -6,10 +6,14 @@ managing connections to the database and file store.
 from contextlib import contextmanager
 from tempfile import NamedTemporaryFile
 import os
+import time
 
 from jserver.storage.file import FileManager
 from jserver.storage.db import DatabaseManager
 from jserver.storage.primitives import OutputFilter
+
+from jserver.utils.logger import setup_logging
+logger = setup_logging(__name__)
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -110,11 +114,17 @@ class ResourceManager:
         """
         Pulls multiple entries from the database
         """
-        return self._db.pull_entries(entry_ids)
+        start_time = time.time()
+        res = self._db.pull_entries(entry_ids)
+        logger.info(f"Pull took {time.time() - start_time} seconds to read {len(entry_ids)} entries")
+        return res
 
     def search_entries(self, filter: OutputFilter) -> list['EntryUUID']:
         """
         Searches for entries in the database
         """
-        return self._db.search_entries(filter)
+        start_time = time.time()
+        res = self._db.search_entries(filter)
+        logger.info(f"Search took {time.time() - start_time} seconds to find {len(res)} entries")
+        return res
     ############################################
