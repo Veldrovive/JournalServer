@@ -282,6 +282,10 @@ class FitbitAPI:
         response = self.authenticator.make_request("https://api.fitbit.com/1/user/-/profile.json")
         return response.json()["user"]
 
+    def get_activity_types(self):
+        response = self.authenticator.make_request("https://api.fitbit.com/1/activities.json")
+        return response.json()
+
     def get_full_activity_log(self, start_date: datetime | None = None) -> list[Activity]:
         """
         Gets the full activity log for the user following the pagination links
@@ -356,21 +360,32 @@ class FitbitAPIInputHandler(InputHandler):
         self.ready = False
         self.set_up_database()
 
+        self.was_authorized = False
+        self.profile = None
+        self.activity_types = None
+
         self.auth = FitbitAuth(self.key_store_collection, config.client_id, config.client_secret)
         self.api = FitbitAPI(self.auth)
         try:
             authorized = self.auth.attempt_auth()
             logger.info(f"Authorized: {authorized}")
             if authorized:
-                self.profile = self.api.get_profile()
+                self.on_first_auth()
             else:
                 self.profile = None
         except ToManyRequestsException as e:
             logger.error(f"Too many requests: {e}")
             self.profile = None
 
-
         self.ready = True
+
+    def on_first_auth(self):
+        if self.was_authorized:
+            return
+        self.was_authorized = True
+
+        self.profile = self.api.get_profile()
+        self.activity_types = self.api.get_activity_types()
 
     @property
     def _rpc_map(self):
@@ -404,7 +419,7 @@ class FitbitAPIInputHandler(InputHandler):
         auth_code = body['auth_code']
         res = self.auth.set_auth_code(auth_code)
         if res:
-            self.profile = self.api.get_profile()
+            self.on_first_auth()
         else:
             self.profile = None
         return {"success": res}
