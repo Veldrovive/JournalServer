@@ -212,6 +212,8 @@ class FitbitAuth:
             self.access_token = access_token
             self.refresh_token = refresh_token
             self.expires_at = time.time() + expires_in
+
+            self.save_tokens()
             return True
         except KeyError:
             logger.info('Failed to refresh token')
