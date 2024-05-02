@@ -158,7 +158,8 @@ class FitbitAuth:
 
         # Attempt to refresh the token
         logger.info('Refreshing token...')
-        if self.refresh_token is not None:
+        if refresh_token is not None:
+            self.refresh_token = refresh_token
             refreshed = self.req_refresh_token()
             if refreshed:
                 logger.info(f"Token refreshed. New token expires at {self.expires_at}.")
@@ -168,6 +169,7 @@ class FitbitAuth:
                 else:
                     logger.info('Failed to authenticate user after refreshing token. There is something wrong with the token. User must re-authenticate.')
             else:
+                self.refresh_token = None
                 logger.info('Failed to refresh token. User must re-authenticate.')
 
         # If the refresh token is invalid, then the user must re-authenticate
