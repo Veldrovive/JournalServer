@@ -53,23 +53,37 @@ class FitbitAuth:
         logger.info(f"Making request to {url}")
         if self.access_token is None:
             raise FitbitUnauthorizedException("No access token. User must authenticate.")
-        if headers is None:
-            headers = {}
-        headers['Authorization'] = f"Bearer {self.access_token}"
-        response = requests.request(method, url, params=params, data=data, headers=headers)
-        # The headers contains a `Fitbit-Rate-Limit-Limit`, `Fitbit-Rate-Limit-Remaining`, `Fitbit-Rate-Limit-Reset`
-        # We extract those
-        rate_limit = {
-            "limit": response.headers.get("Fitbit-Rate-Limit-Limit"),
-            "remaining": response.headers.get("Fitbit-Rate-Limit-Remaining"),
-            "reset": response.headers.get("Fitbit-Rate-Limit-Reset"),
-        }
-        self.remaining_requests = int(rate_limit["remaining"])
-        self.seconds_till_reset = int(rate_limit["reset"])
-        logger.info(f"Rate Limit: {rate_limit}")
-        if rate_limit["remaining"] == '0':
-            raise ToManyRequestsException()
-        return response
+        for retry_ind in range(2):  # Retry once after re-authenticating
+            if headers is None:
+                headers = {}
+            headers['Authorization'] = f"Bearer {self.access_token}"
+            response = requests.request(method, url, params=params, data=data, headers=headers)
+            # The headers contains a `Fitbit-Rate-Limit-Limit`, `Fitbit-Rate-Limit-Remaining`, `Fitbit-Rate-Limit-Reset`
+            # We extract those
+            try:
+                rate_limit = {
+                    "limit": response.headers.get("Fitbit-Rate-Limit-Limit"),
+                    "remaining": response.headers.get("Fitbit-Rate-Limit-Remaining"),
+                    "reset": response.headers.get("Fitbit-Rate-Limit-Reset"),
+                }
+                self.remaining_requests = int(rate_limit["remaining"])
+                self.seconds_till_reset = int(rate_limit["reset"])
+                logger.info(f"Rate Limit: {rate_limit}")
+                if rate_limit["remaining"] == '0':
+                    raise ToManyRequestsException()  # Should not be caught
+                return response
+            except TypeError:
+                logger.error(f"Error getting rate limit: {response.headers}")
+                res_json = response.json()
+                logger.error(f"Response: {res_json}")
+                # Attempt to re-auth
+                authorized = self.attempt_auth()
+                if not authorized:
+                    raise FitbitUnauthorizedException("Failed to re-authenticate user.")
+                # Otherwise we should be good to retry
+                continue
+        raise Exception("Failed to make request")
+
 
     def check_token(self):
         """
