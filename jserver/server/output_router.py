@@ -6,6 +6,7 @@ import json
 import tempfile
 import shutil
 import os
+import time
 
 from fastapi import APIRouter, File, UploadFile, Form, Query
 from fastapi.responses import JSONResponse
@@ -54,7 +55,9 @@ async def root(
 
     entry_uuids = rmanager.search_entries(filter)
     entries = rmanager.pull_entries(entry_uuids)
+    start_time = time.time()
     output_entries = [entry_to_output(entry) for entry in entries]
     output_data = [entry.model_dump() for entry in output_entries]
+    logger.info(f"Time to dump entries: {time.time() - start_time}")
 
     return JSONResponse(status_code=200, content=output_data)
