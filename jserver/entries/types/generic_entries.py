@@ -85,12 +85,12 @@ class GenericFileEntry(EntryABC):
 
     @computed_field
     @property
-    def entry_uuid(self) -> EntryUUID:
+    def _entry_uuid(self) -> EntryUUID:
         return f"file-{self.start_time}-{self.entry_hash}"
 
     @computed_field
     @property
-    def entry_hash(self) -> EntryHash:
+    def _entry_hash(self) -> EntryHash:
         """
         We need to make sure the hash will not change if we try to reupload the same file so we hash the file name, file type and file metadata
         which should be unique when used in conjunction with the timestamp.

@@ -13,7 +13,7 @@ import asyncio
 from jserver.config import Config
 from jserver.storage import construct_manager as construct_resource_manager
 from jserver.utils.config import load_config
-from jserver.input_handlers import InputHandlerManager
+from jserver.input_handlers.input_handler_manager import InputHandlerManager
 from jserver.server import start_server
 
 from jserver.utils.logger import setup_logging

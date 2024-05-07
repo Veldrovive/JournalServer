@@ -13,7 +13,9 @@ requirements = [
     "uvicorn[standard]",
     "requests>=2.0.0,<3.0.0",
     "tcxreader>=0.4.0,<0.5.0",
-    "python-multipart>=0.0.8"
+    "python-multipart>=0.0.8",
+    "notion-client>=2.2.0",
+    "notion2markdown>=0.2.0"
 ]
 
 setup(

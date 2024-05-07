@@ -3,7 +3,7 @@ from pymongo.errors import DuplicateKeyError
 
 from jserver.storage.db import DatabaseManager
 from jserver.config import Config, MongoDatabaseManagerConfig
-from jserver.entries import Entry, validate_entry
+from jserver.entries import validate_entry
 from jserver.storage.primitives import OutputFilter
 from jserver.exceptions import *
 
@@ -13,6 +13,7 @@ logger = setup_logging(__name__)
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from jserver.entries.primitives import EntryUUID
+    from jserver.entries import Entry
 
 class MongoDatabaseManager(DatabaseManager):
     def __init__(self, config: 'Config'):
@@ -47,7 +48,7 @@ class MongoDatabaseManager(DatabaseManager):
     def get_database_connection(self, db_name: str):
         return self.client[db_name]
 
-    def insert_entry(self, entry: Entry) -> None:
+    def insert_entry(self, entry: 'Entry') -> None:
         """
         Entries are defined such that they are fully serializable by pydantic.
         """
@@ -60,14 +61,14 @@ class MongoDatabaseManager(DatabaseManager):
     def delete_entry(self, entry_id: 'EntryUUID') -> None:
         self.database.entries.delete_one({"entry_uuid": entry_id})
 
-    def pull_entry(self, entry_id: 'EntryUUID') -> Entry:
+    def pull_entry(self, entry_id: 'EntryUUID') -> 'Entry':
         entry_dict = self.database.entries.find_one({"entry_uuid": entry_id})
         if entry_dict is None:
             raise EntryNotFoundException(f"Entry with id {entry_id} not found")
         entry = validate_entry(entry_dict)
         return entry
 
-    def pull_entries(self, entry_ids: list['EntryUUID']) -> list[Entry]:
+    def pull_entries(self, entry_ids: list['EntryUUID']) -> list['Entry']:
         entries = self.database.entries.find({"entry_uuid": {"$in": entry_ids}})
         results_map = { entry["entry_uuid"]: entry for entry in entries }
         try:

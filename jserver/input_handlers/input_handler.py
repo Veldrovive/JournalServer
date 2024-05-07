@@ -9,7 +9,7 @@ import traceback
 
 from jserver.entries import Entry, GenericFileEntry
 from jserver.entries.primitives import EntryUUID
-from jserver.storage import EntryManager
+from jserver.storage.entry_manager import EntryManager
 from jserver.config.input_handler_config import AllInputHandlerConfig
 
 from jserver.utils.logger import setup_logging

@@ -25,12 +25,12 @@ class GeolocationEntry(EntryABC):
 
     @computed_field
     @property
-    def entry_uuid(self) -> EntryUUID:
+    def _entry_uuid(self) -> EntryUUID:
         return f"location-{self.start_time}-{self.entry_hash}"
 
     @computed_field
     @property
-    def entry_hash(self) -> EntryHash:
+    def _entry_hash(self) -> EntryHash:
         return hashers.hash_text(self.data.model_dump_json())
 
     def construct_output_data(self) -> dict[str, Any]:

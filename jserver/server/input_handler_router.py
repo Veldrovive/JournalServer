@@ -14,7 +14,7 @@ import os
 from fastapi import APIRouter, File, UploadFile, Form
 from fastapi.responses import JSONResponse
 
-from jserver.input_handlers import InputHandlerManager
+from jserver.input_handlers.input_handler_manager import InputHandlerManager
 from jserver.exceptions import *
 
 from jserver.utils.logger import setup_logging
