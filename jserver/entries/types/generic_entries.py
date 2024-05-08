@@ -14,7 +14,7 @@ class TextEntry(EntryABC):
 
     @computed_field
     @property
-    def entry_uuid(self) -> EntryUUID:
+    def _entry_uuid(self) -> EntryUUID:
         """
         There isn't an optimal way to catch mutations of text entries because they do not have a unique identifier.
         The best we can do is use the text itself as the identifier, but then if the text is changed the entry will be considered new.
@@ -23,7 +23,7 @@ class TextEntry(EntryABC):
 
     @computed_field
     @property
-    def entry_hash(self) -> EntryHash:
+    def _entry_hash(self) -> EntryHash:
         return hashers.hash_text(self.data)
 
     def construct_output_data(self) -> str:

@@ -13,9 +13,15 @@ requirements = [
     "uvicorn[standard]",
     "requests>=2.0.0,<3.0.0",
     "tcxreader>=0.4.0,<0.5.0",
-    "python-multipart>=0.0.8",
-    "notion-client>=2.2.0",
-    "notion2markdown>=0.2.0"
+    "python-multipart>=0.0.8,<0.1.0",
+    "notion-client>=2.2.0,<2.3.0",
+
+    # File metadata extraction
+    "exifread>=3.0.0,<4.0.0",
+    "ffmpeg-python>=0.2.0,<0.3.0",  # ffmpeg-python is a wrapper around ffmpeg. Must install ffmpeg separately.
+    "python-dateutil>=2.9.0.post0,<3.0.0",
+    "PyPDF2>=3.0.0<4.0.0",
+    "python-magic>=0.4.20,<0.5.0",  # python-magic is a wrapper around libmagic. Must install libmagic separately. https://github.com/ahupp/python-magic
 ]
 
 setup(

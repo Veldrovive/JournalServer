@@ -54,8 +54,9 @@ class NotionInputHandler(InputHandler):
         self.pages_collection = self.db_connection.get_collection("pages")
         self.pages_collection.create_index("id", unique=True)
 
-        self.blocks_collection = self.db_connection.get_collection("blocks")
-        self.blocks_collection.create_index("id", unique=True)
+        self.entries_collection = self.db_connection.get_collection("blocks")
+        self.entries_collection.create_index("id", unique=True)
+        self.entries_collection.create_index("page_id", unique=False)
 
     async def get_pages(self) -> tuple[NotionPage, list[NotionPage]]:
         """
@@ -65,8 +66,10 @@ class NotionInputHandler(InputHandler):
         Subpages are only those that are direct children of the base Journal page
         """
         pages = self.client.search()
+
         page_objs = [NotionPage(
             id = page["id"],
+            created_time = page["created_time"],
             last_edited_time = page["last_edited_time"],
             parent_page_id = page["parent"]["page_id"] if page["parent"]["type"] == "page_id" else None,
             plaintext_title = page["properties"]["title"]["title"][0]["plain_text"],
@@ -97,83 +100,128 @@ class NotionInputHandler(InputHandler):
         if page_data is None:
             return True
 
+        # logger.info(f"Database page last edited time: {page_data['last_edited_time']}, Page last edit time: {page.last_edit_time_ms}")
         return page_data["last_edited_time"] != page.last_edit_time_ms
 
     def set_page_processed(self, page: NotionPage):
         """
         Sets the last edited time of the page in the database
         """
-        self.pages_collection.update_one({"id": page.id}, {"$set": {"last_edited_time": page.last_edit_time_ms}})
+        self.pages_collection.replace_one({"id": page.id}, {"id": page.id, "last_edited_time": page.last_edit_time_ms}, upsert=True)
 
-    async def process_day_page(self, page: NotionPage) -> NotionDayPage | None:
+    async def process_day_page(self, page: NotionPage, start_time_ms: int, end_time_ms: int) -> list[NotionEntry]:
         """
-        Processes a single day page
-
-        Returns None if the page has not been updated
+        Processes all blocks on the page to notion entries which are directly convertible to Entry objects
         """
         logger.info(f"Processing day page: {page.plaintext_title}")
-        if not self.page_has_updated(page):
-            return None
-        logger.info(f"Page has been updated. Getting blocks")
-
-        # blocks_res_json = get_page_blocks_json(self.client, page.id)
-
-        # import json
-        # with open("blocks.json", "w") as f:
-        #     f.write(json.dumps(blocks_res_json, indent=2))
-
+        logger.info(f"Getting blocks")
         blocks_res = get_page_blocks(self.client, page.id)
-        blocks_res_json = [block.model_dump() for block in blocks_res]
+        try:
+            logger.info(f"Splitting blocks")
+            split_blocks = split_page_blocks(blocks_res, start_time_ms, end_time_ms, f"notion_page_{page.id}")
+            logger.info(f"Got {len(split_blocks)} notion entries")
+            logger.info("Resolving monotonicity")
+            resolved_blocks = resolve_monotonicity(split_blocks, start_time_ms, end_time_ms)
 
-        import json
-        with open("blocks.json", "w") as f:
-            f.write(json.dumps(blocks_res_json, indent=2))
-
-        # raw_blocks = blocks_res["results"]
-        # cur_block_ind = 0
-        # blocks = []
-        # while cur_block_ind < len(raw_blocks):
-        #     block = raw_blocks[cur_block_ind]
-        #     if block["type"] == "paragraph":
-        #         # We just process the rich text to markdown and store it as a text entry
-        #         raw_rich_text = block["paragraph"]["rich_text"]
-        #         rich_text = [RichTextItem.validate(rich_text_item) for rich_text_item in raw_rich_text]
-        #         markdown_text = process_rich_text(rich_text)
+            return resolved_blocks
+        except Exception as e:
+            raise e
+        finally:
+            logger.info(f"Cleaning up {len(blocks_res)} blocks")
+            for block in blocks_res:
+                block.cleanup()
 
 
-    def block_has_updated(self, block: NotionBlock) -> bool:
+    def entry_has_updated(self, entry: NotionEntry) -> bool:
         """
-        Checks the database to see if the last_edited_time of the block has changed
-        If the block id is not found or the last_edited_time has changed, return True
+        Checks the database to see if the last_edited_time of the entry has changed
+        If the entry id is not found or the last_edited_time has changed, return True
         """
-        block_data = self.blocks_collection.find_one({"id": block.id})
+        id = entry.rep_uuid
+        last_updated_time_ms = entry.last_updated_time
+        block_data = self.entries_collection.find_one({"id": id})
         if block_data is None:
             return True
 
-        return block_data["last_edited_time"] != block.last_edit_time_ms
+        return block_data["last_edited_time"] != last_updated_time_ms
 
-    def set_block_processed(self, block: NotionBlock):
+    def set_entry_processed(self, entry: NotionEntry, page: NotionPage):
         """
-        Sets the last edited time of the block in the database
+        Sets the last edited time of the entry in the database
         """
-        self.blocks_collection.update_one({"id": block.id}, {"$set": {"last_edited_time": block.last_edit_time_ms}})
+        id = entry.rep_uuid
+        last_updated_time_ms = entry.last_updated_time
+        page_id = page.id
+        self.entries_collection.replace_one({"id": id}, {"id": id, "last_edited_time": last_updated_time_ms, "page_id": page_id}, upsert=True)
+
+    async def trigger(self, entry_insertion_log: list[EntryInsertionLog]):
+        journal_page, subpages = await self.get_pages()
+
+        # # Find the page with the plaintext title: "Test"
+        # test_subpage = None
+        # for subpage in subpages:
+        #     if subpage.plaintext_title == "Test":
+        #         test_subpage = subpage
+        #         break
+
+        # if self.page_has_updated(test_subpage):
+        #     logger.info(f"Test page has been updated. Getting blocks")
+        #     new_notion_entries = await self.process_day_page(test_subpage, *test_subpage.get_day_bounds())
+        #     logger.info(f"Got {len(new_notion_entries)} new notion entries")
+        #     for notion_entry in new_notion_entries:
+        #         # Check if the entry has been updated
+        #         if self.entry_has_updated(notion_entry):
+        #             entry = notion_entry_to_entry(notion_entry, self.handler_id)
+        #             logger.info(f"Entry with id {notion_entry.rep_uuid} ({entry.entry_type}, {notion_entry.start_time}, {entry.start_time}) has been updated")
+        #             if issubclass(entry.__class__, GenericFileEntry):
+        #                 self.insert_file_entry(entry_insertion_log, entry)
+        #             else:
+        #                 self.insert_entry(entry_insertion_log, entry)
+        #             self.set_entry_processed(notion_entry, test_subpage)
+        #         else:
+        #             logger.info(f"Entry with id {notion_entry.rep_uuid} has not been updated")
+        #     self.set_page_processed(test_subpage)
+        # else:
+        #     logger.info(f"Test page has not been updated")
+
+        not_updated_list = []
+        updated_list = []
+        for subpage in subpages:
+            if self.page_has_updated(subpage):
+                day_start_ms, day_end_ms = subpage.get_day_bounds()
+                logger.info(f"Subpage {subpage.plaintext_title} ({day_start_ms} - {day_end_ms}) has been updated. Getting blocks")
+                new_notion_entries = await self.process_day_page(subpage, day_start_ms, day_end_ms)
+                logger.info(f"Got {len(new_notion_entries)} new notion entries")
+                for notion_entry in new_notion_entries:
+                    # Check if the entry has been updated
+                    if self.entry_has_updated(notion_entry):
+                        logger.info(f"Entry with id {notion_entry.rep_uuid} has been updated")
+                        entry = notion_entry_to_entry(notion_entry, self.handler_id)
+                        if issubclass(entry.__class__, GenericFileEntry):
+                            self.insert_file_entry(entry_insertion_log, entry)
+                        else:
+                            self.insert_entry(entry_insertion_log, entry)
+                        self.set_entry_processed(notion_entry, subpage)
+                    else:
+                        logger.info(f"Entry with id {notion_entry.rep_uuid} has not been updated")
+                self.set_page_processed(subpage)
+                updated_list.append(subpage.plaintext_title)
+            else:
+                # logger.info(f"Subpage {subpage.plaintext_title} has not been updated")
+                not_updated_list.append(subpage.plaintext_title)
+        if len(not_updated_list) > 0:
+            if len(not_updated_list) == len(subpages):
+                logger.info(f"All subpages have not been updated")
+            else:
+                logger.info(f"Subpages {not_updated_list} have not been updated")
+        if len(updated_list) > 0:
+            logger.info(f"Subpages {updated_list} have been updated")
 
     async def _on_trigger_interval(self, entry_insertion_log: list[EntryInsertionLog]):
-        raise NotImplementedError
+        await self.trigger(entry_insertion_log)
 
     async def _on_trigger_request(self, entry_insertion_log: list[EntryInsertionLog], file, metadata):
-        journal_page, subpages = await self.get_pages()
-        # logger.info(f"Journal page: {journal_page.model_dump_json(indent=2)}")
-        # subpage_str = '\n'.join([subpage.model_dump_json(indent=2) for subpage in subpages])
-        # logger.info(f"Subpages: {subpage_str}")
-        # test_subpage = subpages[0]
-        # Fine the page with the plaintext title: "Test"
-        test_subpage = None
-        for subpage in subpages:
-            if subpage.plaintext_title == "Test":
-                test_subpage = subpage
-                break
-        day_page = await self.process_day_page(test_subpage)
+        await self.trigger(entry_insertion_log)
 
     async def _on_trigger_new_file(self, entry_insertion_log: list[EntryInsertionLog], file):
         raise NotImplementedError

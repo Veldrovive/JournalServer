@@ -57,12 +57,12 @@ class AccelerometerEntry(EntryABC):
 
     @computed_field
     @property
-    def entry_uuid(self) -> EntryUUID:
+    def _entry_uuid(self) -> EntryUUID:
         return f"accelerometer-{self.start_time}-{self.entry_hash}"
 
     @computed_field
     @property
-    def entry_hash(self) -> EntryHash:
+    def _entry_hash(self) -> EntryHash:
         return hashers.hash_text(self.data.model_dump_json())
 
     def construct_output_data(self) -> dict[str, Any]:
@@ -81,12 +81,12 @@ class HeartRateEntry(EntryABC):
 
     @computed_field
     @property
-    def entry_uuid(self) -> EntryUUID:
+    def _entry_uuid(self) -> EntryUUID:
         return f"heart_rate-{self.start_time}-{self.entry_hash}"
 
     @computed_field
     @property
-    def entry_hash(self) -> EntryHash:
+    def _entry_hash(self) -> EntryHash:
         return hashers.hash_text(self.data.model_dump_json())
 
     def construct_output_data(self) -> dict[str, Any]:
@@ -105,12 +105,12 @@ class SleepStateEntry(EntryABC):
 
     @computed_field
     @property
-    def entry_uuid(self) -> EntryUUID:
+    def _entry_uuid(self) -> EntryUUID:
         return f"sleep_state-{self.start_time}-{self.entry_hash}"
 
     @computed_field
     @property
-    def entry_hash(self) -> EntryHash:
+    def _entry_hash(self) -> EntryHash:
         return hashers.hash_text(self.data.model_dump_json())
 
     def construct_output_data(self) -> dict[str, Any]:

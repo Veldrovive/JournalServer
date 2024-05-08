@@ -5,12 +5,15 @@ import pathlib
 import urllib
 import requests
 import os
+import re
 
+import dateutil.parser
 from pydantic import BaseModel, Field, ValidationError, computed_field
 from notion_client import Client
 from notion_client.helpers import iterate_paginated_api as paginate
 
-from jserver.entries import Entry
+from jserver.entries import Entry, TextEntry, GenericFileEntry, ImageFileEntry, VideoFileEntry, AudioFileEntry, PDFileEntry
+from jserver.utils.file_metadata import extract_file_metadata
 
 from typing import Literal, Any, ClassVar
 
@@ -21,6 +24,9 @@ class RichTextText(BaseModel):
     content: str = Field(..., description="The content of the text")
     link: RichTextLink | None = Field(None, description="The link of the text")
 
+class RichTextEquation(BaseModel):
+    expression: str = Field(..., description="The latex expression of the equation")
+
 class RichTextAnnotations(BaseModel):
     bold: bool
     italic: bool
@@ -30,8 +36,8 @@ class RichTextAnnotations(BaseModel):
     color: str | None = None
 
 class RichTextItem(BaseModel):
-    type: Literal["text"] = "text"
-    text: RichTextText
+    # type: Literal["text"] = "text"
+    # text: RichTextText
     annotations: RichTextAnnotations
     plain_text: str
     href: str | None = None
@@ -41,6 +47,10 @@ class RichTextItem(BaseModel):
         Converts the rich text item to markdown
         """
         markdown = self.plain_text
+        # Get the amount of white space on the left and right
+        left_whitespace = len(markdown) - len(markdown.lstrip())
+        right_whitespace = len(markdown) - len(markdown.rstrip())
+        markdown = markdown.strip()
         if self.href is not None:
             markdown = f"[{markdown}]({self.href})"
         if self.annotations.bold:
@@ -53,22 +63,68 @@ class RichTextItem(BaseModel):
             markdown = f"<u>{markdown}</u>"
         if self.annotations.code:
             markdown = f"`{markdown}`"
+        # Add back the white space
+        markdown = " " * left_whitespace + markdown + " " * right_whitespace
         return markdown
+
+class TextRichTextItem(RichTextItem):
+    type: Literal["text"] = "text"
+    text: RichTextText
+
+class EquationRichTextItem(RichTextItem):
+    type: Literal["equation"] = "equation"
+    equation: RichTextEquation
+
+    def to_markdown(self) -> str:
+        """
+        Converts the rich text item to markdown
+        """
+        return f"${self.equation.expression}$"
 
 class NotionPage(BaseModel):
     id: str = Field(..., description="The id of the page")
+    created_time: str = Field(..., description="The created time of the page. ISO format 2024-05-05T21:55:00.000Z")
     last_edited_time: str = Field(..., description="The last edited time of the page. ISO format 2024-05-05T21:55:00.000Z")
     parent_page_id: str | None = Field(None, description="The id of the parent page. None if the parent is not a page")
     plaintext_title: str = Field(..., description="The plaintext title of the page")
     url: str = Field(..., description="The url of the page")
 
-    @property
     @computed_field
+    @property
     def last_edit_time_ms(self) -> int:
         """
         Returns the last edit time in milliseconds
         """
-        return int(datetime.datetime.fromisoformat(self.last_edited_time).timestamp() * 1000)
+        return int(dateutil.parser.parse(self.last_edited_time).timestamp() * 1000)
+
+    @computed_field
+    @property
+    def created_time_ms(self) -> int:
+        """
+        Returns the created time in milliseconds
+        """
+        return int(dateutil.parser.parse(self.created_time).timestamp() * 1000)
+
+    def get_day_bounds(self) -> tuple[int, int]:
+        """
+        Returns the ms since the epoch for the start and end of the day
+        Assumes that the timezone is the same as the current timezone
+        """
+        tzinfo = datetime.datetime.now().astimezone().tzinfo
+        # If the title has the format "[MONTH] [DAY], [YEAR]", then we can use that to get the start and end of the day
+        match = re.match(r"(\w+) (\d+), (\d+)", self.plaintext_title)
+        if match is not None:
+            month, day, year = match.groups()
+            month = datetime.datetime.strptime(month, "%B").month
+            created_time_dt = datetime.datetime(int(year), month, int(day), tzinfo=tzinfo)
+            start_time_ms = created_time_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000
+            end_time_ms = created_time_dt.replace(hour=23, minute=59, second=59, microsecond=999999).timestamp() * 1000
+            return start_time_ms, end_time_ms
+        else:
+            created_time_dt = datetime.datetime.fromtimestamp(self.created_time_ms / 1000, tz=tzinfo)
+            start_time_ms = created_time_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000
+            end_time_ms = created_time_dt.replace(hour=23, minute=59, second=59, microsecond=999999).timestamp() * 1000
+        return start_time_ms, end_time_ms
 
 class NotionBlock(BaseModel):
     object: Literal["block"] = "block"
@@ -77,26 +133,34 @@ class NotionBlock(BaseModel):
     last_edited_time: str = Field(..., description="The last edited time of the block. ISO format 2024-05-05T21:55:00.000Z")
     type: str = Field(..., description="The type of the block")
 
-    @property
     @computed_field
+    @property
     def last_edit_time_ms(self) -> int:
         """
         Returns the last edit time in milliseconds
         """
-        return int(datetime.datetime.fromisoformat(self.last_edited_time).timestamp() * 1000)
+        return int(dateutil.parser.parse(self.last_edited_time).timestamp() * 1000)
 
-    @property
     @computed_field
+    @property
     def created_time_ms(self) -> int:
         """
         Returns the created time in milliseconds
         """
-        return int(datetime.datetime.fromisoformat(self.created_time).timestamp() * 1000)
+        return int(dateutil.parser.parse(self.created_time).timestamp() * 1000)
+
+    def cleanup(self):
+        """
+        Cleans up any temporary files
+        """
+        pass
+
+AllRichTextItems = TextRichTextItem | EquationRichTextItem
 
 
 ######### Notion Block Type Definitions #########
 class NotionRichTextData(BaseModel):
-    rich_text: list[RichTextItem] = Field([], description="The rich text of the bulleted list", exclude=True)
+    rich_text: list[AllRichTextItems] = Field([], description="Rich text JSON", exclude=True)
     color: str | None = Field(None, description="The color of the text")
 
     @computed_field
@@ -143,11 +207,13 @@ class NotionQuoteBlock(NotionBlock):
     quote: NotionRichTextData = Field(..., description="The quote data of the block")
 
 class NotionFileData(BaseModel):
-    caption: list[RichTextItem] = Field([], description="The caption of the image", exclude=True)
+    caption: list[AllRichTextItems] = Field([], description="The caption of the image", exclude=True)
     type: str = Field(..., description="file or external")
     external: dict[str, str] | None = Field(None, description="The external data of the image. None if the image is a file. Contains only `url` key.")
     file: dict[str, str] | None = Field(None, description="The file data of the image. None if the image is external. Contains `url` and `expiry_time` keys.")
     name: str | None = Field(None, description="The name of the file")
+
+    temp_file_data: dict[str, Any] | None = Field(None, description="Temporary file data for the file", exclude=True)
 
     @computed_field
     @property
@@ -157,41 +223,55 @@ class NotionFileData(BaseModel):
         """
         return "".join([item.to_markdown() for item in self.caption])
 
-    @contextmanager
-    def open_file(self) -> dict[str, Any]:
+    def pull_file(self) -> dict[str, Any]:
         """
-        Download the file and returns a temporary file object along with the file name
+        Downloads the file as a temporary file and returns the temp file data
         {
             file: tempfile,
             name: str,  ("test.ext")
             type: str (".ext")
         }
         """
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            file_url = self.file["url"] if self.type == "file" else self.external["url"]
-            name = None
-            if self.name:
-                name = self.name
-            else:
-                # Then we need to get the name based on the url
-                name = pathlib.Path(urllib.parse.urlparse(file_url).path).name
-            if name:
-                ext = pathlib.Path(name).suffix
+        if self.temp_file_data:
+            return self.temp_file_data
 
+        file_url = self.file["url"] if self.type == "file" else self.external["url"]
+        name = None
+        if self.name:
+            name = self.name
+        else:
+            # Then we need to get the name based on the url
+            name = pathlib.Path(urllib.parse.urlparse(file_url).path).name
+        if name:
+            ext = pathlib.Path(name).suffix
+
+        # Create a temporary file with the correct extension
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
             response = requests.get(file_url)
             temp_file.write(response.content)
             temp_file.seek(0)
 
-            try:
-                yield {
-                    "file": temp_file,
-                    "name": name,
-                    "type": ext
-                }
-            except Exception as e:
-                raise e
-            finally:
-                os.unlink(temp_file.name)
+            self.temp_file_data = {
+                "file": temp_file,
+                "name": name,
+                "type": ext
+            }
+            return self.temp_file_data
+
+    def get_file_metadata(self) -> tuple[datetime.datetime, dict, int]:
+        """
+        Returns a tuple of the creation time, {lat, lng}, and duration_ms of the file
+        """
+        file_data = self.pull_file()
+        return extract_file_metadata(file_data["file"].name)
+
+    def remove_temp_file(self):
+        if self.temp_file_data:
+            os.unlink(self.temp_file_data["file"].name)
+            self.temp_file_data = None
+
+    def __del__(self):
+        self.remove_temp_file()
 
 
 class NotionImageBlock(NotionBlock):
@@ -199,20 +279,32 @@ class NotionImageBlock(NotionBlock):
     type: Literal["image"] = "image"
     image: NotionFileData = Field(..., description="The image data of the block")
 
+    def cleanup(self):
+        self.image.remove_temp_file()
+
 class NotionVideoBlock(NotionBlock):
     _type: ClassVar[str] = "video"
     type: Literal["video"] = "video"
     video: NotionFileData = Field(..., description="The video data of the block")
+
+    def cleanup(self):
+        self.video.remove_temp_file()
 
 class NotionAudioBlock(NotionBlock):
     _type: ClassVar[str] = "audio"
     type: Literal["audio"] = "audio"
     audio: NotionFileData = Field(..., description="The audio data of the block")
 
+    def cleanup(self):
+        self.audio.remove_temp_file()
+
 class NotionGenericFileBlock(NotionBlock):
     _type: ClassVar[str] = "file"
     type: Literal["file"] = "file"
     file: NotionFileData = Field(..., description="The file data of the block")
+
+    def cleanup(self):
+        self.file.remove_temp_file()
 
 class NotionEquationData(BaseModel):
     expression: str = Field(..., description="The latex expression of the equation")
@@ -223,8 +315,8 @@ class NotionEquationBlock(NotionBlock):
     equation: NotionEquationData = Field(..., description="The equation data of the block")
 
 class NotionCodeData(BaseModel):
-    caption: list[RichTextItem] = Field([], description="The caption of the code block", exclude=True)
-    rich_text: list[RichTextItem] = Field([], description="The rich text of the code block", exclude=True)
+    caption: list[AllRichTextItems] = Field([], description="The caption of the code block", exclude=True)
+    rich_text: list[AllRichTextItems] = Field([], description="The rich text of the code block", exclude=True)
     language: str | None = Field(None, description="The language of the code block")
 
     @computed_field
@@ -248,27 +340,87 @@ class NotionCodeBlock(NotionBlock):
     type: Literal["code"] = "code"
     code: NotionCodeData = Field(..., description="The code data of the block")
 
-# AllNotionBlockTypes = NotionImageBlock | NotionBulletedListBlock | NotionHeadingThreeBlock | NotionHeadingTwoBlock | \
-#     NotionHeadingOneBlock | NotionParagraphBlock | NotionVideoBlock | NotionAudioBlock | NotionGenericFileBlock | \
-#     NotionEquationBlock | NotionCodeBlock | NotionQuoteBlock
+ArbitraryNotionBlockType = NotionParagraphBlock | NotionHeadingOneBlock | NotionHeadingTwoBlock | NotionHeadingThreeBlock | \
+    NotionBulletedListBlock | NotionNumberedListBlock | NotionQuoteBlock | NotionImageBlock | NotionVideoBlock | \
+    NotionAudioBlock | NotionGenericFileBlock | NotionEquationBlock | NotionCodeBlock
 
 AllNotionBlockTypes = [NotionImageBlock, NotionBulletedListBlock, NotionNumberedListBlock, NotionHeadingThreeBlock, NotionHeadingTwoBlock,
     NotionHeadingOneBlock, NotionParagraphBlock, NotionVideoBlock, NotionAudioBlock, NotionGenericFileBlock,
     NotionEquationBlock, NotionCodeBlock, NotionQuoteBlock]
-
-# class NotionBlockContainer(BaseModel):
-#     block: AllNotionBlockTypes = Field(..., description="The block data")
 ###########################################
 
-class NotionDayPage(NotionPage):
+class NotionEntry(BaseModel):
     """
-    Stores the information necessary to look up if this is an existing day page in the database
-
-    If the last_edited_time has not changed since the last time the page was processed, then the page is not processed again
-
-    The block Ids are used to check if a block that was previously processed has been removed. In that case the entry should be deleted.
+    Associates a list of blocks that can be converted into a single entry with a start time, duration,
+    and representative id for the entire set of blocks
     """
-    blocks: list[NotionBlock] = Field([], description="The blocks of the page")
+    rep_uuid: str = Field(..., description="The representative UUID of the entry")
+    group_id: str = Field(..., description="The group id of the entry")
+    start_time: int = Field(..., description="The start time of the entry in milliseconds since the epoch")
+    last_updated_time: int = Field(..., description="The latest time any of the constituent blocks were updated in ms since the epoch")
+    duration: int | None = Field(None, description="The duration of the entry in milliseconds")
+    latitude: float | None = Field(None, description="The latitude of the entry")
+    longitude: float | None = Field(None, description="The longitude of the entry")
+    seq_id: int | None = Field(None, description="Defines where in a group the entry should be placed. Should be unique within a group")
+    notion_blocks: list[ArbitraryNotionBlockType] = Field([], description="The blocks of the entry")
+
+def create_notion_entry(blocks: list[NotionBlock], seq_id: int, group_id: str, start_time_override: int | None = None):
+    """
+    Uses the content of the notion blocks to find the values of the notion entry metadata
+    """
+    print(f"Creating notion entry with {len(blocks)} blocks", [block.type for block in blocks])
+    # The representative UUID is the type of the first block "_" id of the first block
+    rep_uuid = f"{blocks[0].type}_{blocks[0].id}"
+
+    # The start time varies based on the entry type
+    # We default to the start time of the first block
+    # Later when we process a file we will override this with the file metadata time if it exists
+    start_time = blocks[0].created_time_ms if start_time_override is None else start_time_override
+
+    # Duration is None for now
+    duration = None
+
+    # Latitude and longitude are None for now
+    latitude = None
+    longitude = None
+
+    # Check if the first block is a file
+    if blocks[0].type in ["file", "image", "video", "audio"]:
+        # Then we need to get the metadata of the file
+        file_data = None
+        if blocks[0].type == "file":
+            file_data = blocks[0].file
+        elif blocks[0].type == "image":
+            file_data = blocks[0].image
+        elif blocks[0].type == "video":
+            file_data = blocks[0].video
+        elif blocks[0].type == "audio":
+            file_data = blocks[0].audio
+
+        file_start_time, file_location, file_duration_ms = file_data.get_file_metadata()
+        if file_start_time is not None and start_time_override is None:
+            start_time = int(file_start_time.timestamp() * 1000)
+
+        if file_location is not None:
+            latitude, longitude = file_location["lat"], file_location["lng"]
+
+        if file_duration_ms is not None:
+            duration = file_duration_ms
+
+    last_updated_time = max([block.last_edit_time_ms for block in blocks])
+
+    print(f"Start time: {start_time}, duration: {duration}, latitude: {latitude}, longitude: {longitude}, seq_id: {seq_id}")
+    return NotionEntry(
+        rep_uuid=rep_uuid,
+        group_id=group_id,
+        start_time=start_time,
+        last_updated_time=last_updated_time,
+        duration=duration,
+        latitude=latitude,
+        longitude=longitude,
+        seq_id=seq_id,
+        notion_blocks=blocks
+    )
 
 def get_page_blocks_json(client: Client, page_block_id: str) -> list[dict[str, Any]]:
     """
@@ -298,11 +450,232 @@ def get_page_blocks(client: Client, page_block_id: str) -> list[NotionBlock]:
 
     return blocks
 
-def day_page_json_to_model(page_json: dict[str, Any]) -> NotionPage:
+# We define a block type cluster as a set of block type ids such that all can be included in a single entry
+# For example, all purely text blocks may be included in a single entry
+block_type_clusters = [
+    ['paragraph', 'heading_1', 'heading_2', 'heading_3', 'bulleted_list_item', 'numbered_list_item', 'quote', 'code', 'equation'],
+    ['image'],
+    ['video'],
+    ['audio'],
+    ['file']
+]
+
+def get_cluster_idx(block_type: str) -> int:
+        for i, cluster in enumerate(block_type_clusters):
+            if block_type in cluster:
+                return i
+        raise ValueError(f"Block type {block_type} not recognized")
+
+def parse_date_block(text: str) -> int | None:
     """
-    Converts a page json to a notion page model
+    If the string is H:MM or HH:MM, optionally followed by :SS (seconds), then we return the time in milliseconds since the epoch.
+    We also accept (H)H:MM:SS AM/PM or (H)H:MM:SSAM/PM. AM and PM may or may not be capitalized.
+
+    Returns an offset in milliseconds since the start of the day.
     """
-    return NotionDayPage.model_validate(page_json)
+    # Adding optional seconds to the regex and improving the AM/PM detection
+    match = re.match(r"(\d{1,2}):(\d{2})(?::(\d{2}))?\s?(AM|PM|am|pm)?", text, re.IGNORECASE)
+    if match is None:
+        return None
+    hour, minute, seconds, am_pm = match.groups()
+    hour = int(hour)
+    minute = int(minute)
+    seconds = int(seconds) if seconds is not None else 0  # Default to 0 if seconds are not provided
+
+    if am_pm:
+        am_pm = am_pm.lower()  # Normalize to lowercase for comparison
+        if am_pm == "pm" and hour != 12:
+            hour += 12
+        elif am_pm == "am" and hour == 12:
+            hour = 0  # Midnight case
+
+    return (hour * 3600 + minute * 60 + seconds) * 1000
+
+def notion_entry_to_entry(notion_entry: NotionEntry, handler_id: str) -> Entry:
+    """
+    Converts a notion entry to an entry
+    """
+    # How we convert the entry is dependent on the cluster type
+    data = None
+    entry_constructor = None
+    cluster_type = get_cluster_idx(notion_entry.notion_blocks[0].type)
+    if cluster_type == 0:
+        # Then we are dealing with all text. We will create a text entry.
+        text = ""
+        num_list_num = 1
+        for i, block in enumerate(notion_entry.notion_blocks):
+            should_markdown_newline = True
+            new_text = ""
+            if block.type == "paragraph":
+                new_text = block.paragraph.markdown_text
+            elif block.type == "heading_1":
+                new_text = "# " + block.heading_1.markdown_text
+            elif block.type == "heading_2":
+                new_text = "## " + block.heading_2.markdown_text
+            elif block.type == "heading_3":
+                new_text = "### " + block.heading_3.markdown_text
+            elif block.type == "bulleted_list_item":
+                new_text = "- " + block.bulleted_list_item.markdown_text
+                should_markdown_newline = False
+            elif block.type == "numbered_list_item":
+                new_text = f"{num_list_num}. " + block.numbered_list_item.markdown_text
+                num_list_num += 1
+                should_markdown_newline = False
+            elif block.type == "quote":
+                new_text = "> " + block.quote.markdown_text
+            elif block.type == "code":
+                new_text = "```" + block.code.language + "\n" + block.code.markdown_text + "\n```"
+            elif block.type == "equation":
+                new_text = "$$" + block.equation.expression + "$$"
+            if i > 0:
+                if should_markdown_newline:
+                    text += "\n\n"  # markdown new line between blocks
+                else:
+                    text += "\n"
+            text += new_text
+        data = text
+        entry_constructor = TextEntry
+    elif cluster_type == 1:
+        block = notion_entry.notion_blocks[0]
+        file_data = block.image.pull_file()
+        file_detail = ImageFileEntry.generate_file_detail(
+            file_path = file_data["file"].name,
+            file_metadata = {},
+            use_path_as_id = True  # Set this way until the file is uploaded to the file store
+        )
+        if file_data["name"]:
+            file_detail.file_name = file_data["name"]
+        data = file_detail
+        entry_constructor = ImageFileEntry
+    elif cluster_type == 2:
+        block = notion_entry.notion_blocks[0]
+        file_data = block.video.pull_file()
+        file_detail = VideoFileEntry.generate_file_detail(
+            file_path = file_data["file"].name,
+            file_metadata = {},
+            use_path_as_id = True  # Set this way until the file is uploaded to the file store
+        )
+        if file_data["name"]:
+            file_detail.file_name = file_data["name"]
+        data = file_detail
+        entry_constructor = VideoFileEntry
+    elif cluster_type == 3:
+        block = notion_entry.notion_blocks[0]
+        file_data = block.audio.pull_file()
+        file_detail = AudioFileEntry.generate_file_detail(
+            file_path = file_data["file"].name,
+            file_metadata = {},
+            use_path_as_id = True  # Set this way until the file is uploaded to the file store
+        )
+        if file_data["name"]:
+            file_detail.file_name = file_data["name"]
+        data = file_detail
+        entry_constructor = AudioFileEntry
+    elif cluster_type == 4:
+        block = notion_entry.notion_blocks[0]
+        file_data = block.file.pull_file()
+        file_detail = GenericFileEntry.generate_file_detail(
+            file_path = file_data["file"].name,
+            file_metadata = {},
+            use_path_as_id = True  # Set this way until the file is uploaded to the file store
+        )
+        if file_data["name"]:
+            file_detail.file_name = file_data["name"]
+        data = file_detail
+        if file_data["type"].lower() == ".pdf":
+            entry_constructor = PDFileEntry
+        else:
+            entry_constructor = GenericFileEntry
+
+    # Now we need to use all the metadata to create the entry
+    if entry_constructor is None:
+        raise ValueError(f"Cluster type {cluster_type} not recognized")
+
+    return entry_constructor(
+        data = data,
+        start_time = notion_entry.start_time,
+        end_time = notion_entry.start_time + notion_entry.duration if notion_entry.duration is not None else None,
+        latitude = notion_entry.latitude,
+        longitude = notion_entry.longitude,
+        group_id = notion_entry.group_id,
+        seq_id = notion_entry.seq_id,
+        input_handler_id = handler_id,
+        entry_uuid_override = notion_entry.rep_uuid
+    )
+
+
+def split_page_blocks(page_blocks: list[NotionBlock], day_start_time_ms: int, day_end_time_ms: int, group_id: str) -> list[NotionEntry]:
+    """
+    Splits the raw blocks into sections represented by a notion entry
+    A single notion entry may be directly converted into a single entry object
+    There are two reasons a block may be split
+    1. There is a blank paragraph block
+    2. The block cluster type changes
+    """
+    cur_block_cluster = None
+    cur_notion_entry_blocks = []
+    notion_entries = []
+    start_time_override = None
+    for block in page_blocks:
+        if block.type == "paragraph" and len(block.paragraph.rich_text) == 0:
+            # We have a blank paragraph block. This marks the end of the current entry
+            if len(cur_notion_entry_blocks) > 0:
+                notion_entries.append(create_notion_entry(cur_notion_entry_blocks, len(notion_entries), group_id, start_time_override))
+                cur_notion_entry_blocks = []
+                start_time_override = None
+                cur_block_cluster = None
+            continue
+        if block.type == "paragraph" and parse_date_block(block.paragraph.markdown_text) is not None:
+            # We have a date block. We consider this the start of a new entry with the start time as the offset from the start of the day
+            if len(cur_notion_entry_blocks) > 0:
+                notion_entries.append(create_notion_entry(cur_notion_entry_blocks, len(notion_entries), group_id, start_time_override))
+                cur_notion_entry_blocks = []
+                cur_block_cluster = None
+            start_time_day_offset = parse_date_block(block.paragraph.markdown_text)
+            if start_time_day_offset is not None:
+                start_time_override = day_start_time_ms + start_time_day_offset
+            continue
+        else:
+            block_cluster = get_cluster_idx(block.type)
+            if cur_block_cluster is None:
+                cur_block_cluster = block_cluster
+            elif cur_block_cluster != block_cluster:
+                # We have a new block cluster. This marks the end of the current entry
+                new_notion_entry = create_notion_entry(cur_notion_entry_blocks, len(notion_entries), group_id, start_time_override)
+                notion_entries.append(new_notion_entry)
+                cur_notion_entry_blocks = []
+                cur_block_cluster = block_cluster
+                start_time_override = new_notion_entry.start_time  # If there is not a gap, we want to keep the same start time. This means text immediately following an image will have the same start time as the image
+            cur_notion_entry_blocks.append(block)
+    if len(cur_notion_entry_blocks) > 0:
+        # This shouldn't actually happen because notion entries are always ended by a blank paragraph block
+        # In case that changes, we add this to handle the case
+        notion_entries.append(create_notion_entry(cur_notion_entry_blocks, len(notion_entries), group_id, start_time_override))
+    return notion_entries
+
+def resolve_monotonicity(notion_entries: list[NotionEntry], day_start_ms: int, day_end_ms: int) -> list[NotionEntry]:
+    """
+    Notion entries must be monotonically increasing in time. If they are not, we resolve this by following the rules:
+    1. If the entry falls outside of the day range, we set the start_time to the start_time of the previous entry
+    2. If an entry decreases in time, but is within the day range, we iterate backwards to find the previous entry
+        with a lower timestamp and set all entries between the two to the start time of the previous entry
+    """
+    cur_time = -1
+    for i, entry in enumerate(notion_entries):
+        if entry.start_time < day_start_ms or entry.start_time > day_end_ms:
+            print(f"Entry {i} (time: {entry.start_time}) falls outside of the day range ({day_start_ms} - {day_end_ms}). Setting start time to {cur_time}")
+            entry.start_time = cur_time
+        elif entry.start_time < cur_time:
+            # Iterate backwards to find the previous entry with a lower timestamp
+            cur_entry = i - 1
+            while cur_entry >= 0 and notion_entries[cur_entry].start_time > entry.start_time:
+                cur_entry -= 1
+            cur_time = notion_entries[cur_entry].start_time
+            for j in range(cur_entry + 1, i):
+                notion_entries[j].start_time = cur_time
+        else:
+            cur_time = entry.start_time
+    return notion_entries
 
 def block_group_to_entry(block_group: list[NotionBlock]) -> Entry:
     """

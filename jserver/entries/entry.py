@@ -29,9 +29,8 @@ class EntryABC(BaseModel, ABC):
     entry_uuid_override: EntryUUID | None = Field(None, description="Used to override the entry UUID generation")
     entry_hash_override: EntryHash | None = Field(None, description="Used to override the entry hash generation")
 
-    @abstractmethod
-    @computed_field
     @property
+    @abstractmethod
     def _entry_uuid(self) -> EntryUUID:
         """
         Generate the entry UUID based on the entry type
@@ -50,9 +49,8 @@ class EntryABC(BaseModel, ABC):
             return self.entry_uuid_override
         return self._entry_uuid
 
-    @abstractmethod
-    @computed_field
     @property
+    @abstractmethod
     def _entry_hash(self) -> EntryHash:
         """
         Generate the entry hash based on the data
