@@ -105,26 +105,32 @@ class NotionPage(BaseModel):
         """
         return int(dateutil.parser.parse(self.created_time).timestamp() * 1000)
 
-    def get_day_bounds(self) -> tuple[int, int]:
+    def get_day_date(self) -> datetime.datetime:
         """
-        Returns the ms since the epoch for the start and end of the day
-        Assumes that the timezone is the same as the current timezone
+        If the title has the format "[MONTH] [DAY], [YEAR]", then we can use that to get the date
+        If not then we use the created time
         """
         tzinfo = datetime.datetime.now().astimezone().tzinfo
-        # If the title has the format "[MONTH] [DAY], [YEAR]", then we can use that to get the start and end of the day
         match = re.match(r"(\w+) (\d+), (\d+)", self.plaintext_title)
         if match is not None:
             month, day, year = match.groups()
             month = datetime.datetime.strptime(month, "%B").month
             created_time_dt = datetime.datetime(int(year), month, int(day), tzinfo=tzinfo)
-            start_time_ms = created_time_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000
-            end_time_ms = created_time_dt.replace(hour=23, minute=59, second=59, microsecond=999999).timestamp() * 1000
-            return start_time_ms, end_time_ms
+            start_time = created_time_dt.replace(hour=0, minute=0, second=0, microsecond=0)
         else:
             created_time_dt = datetime.datetime.fromtimestamp(self.created_time_ms / 1000, tz=tzinfo)
-            start_time_ms = created_time_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000
-            end_time_ms = created_time_dt.replace(hour=23, minute=59, second=59, microsecond=999999).timestamp() * 1000
-        return start_time_ms, end_time_ms
+            start_time = created_time_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start_time
+
+    def get_day_bounds(self) -> tuple[int, int]:
+        """
+        Returns the ms since the epoch for the start and end of the day
+        Assumes that the timezone is the same as the current timezone
+        """
+        day_date = self.get_day_date()
+        start_time = int(day_date.timestamp() * 1000)
+        end_time = int((day_date + datetime.timedelta(days=1) - datetime.timedelta(microseconds=1)).timestamp() * 1000)
+        return start_time, end_time
 
 class NotionBlock(BaseModel):
     object: Literal["block"] = "block"

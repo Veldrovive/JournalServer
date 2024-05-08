@@ -150,8 +150,48 @@ class NotionInputHandler(InputHandler):
         page_id = page.id
         self.entries_collection.replace_one({"id": id}, {"id": id, "last_edited_time": last_updated_time_ms, "page_id": page_id}, upsert=True)
 
+    async def try_create_day_page(self, journal_page: NotionPage, existing_subpages: list[NotionPage]):
+        """
+        As a convenience function, if there is no existing subpage with the current day's date, create one
+        """
+        if not self.config.auto_generate_today_page:
+            return
+
+        today = datetime.datetime.now()
+        today_str = today.strftime("%Y-%m-%d")
+
+        for subpage in existing_subpages:
+            page_datetime = subpage.get_day_date()
+            page_date_str = page_datetime.strftime("%Y-%m-%d")
+            if page_date_str == today_str:
+                logger.info(f"Today's page already exists")
+                return
+        logger.info(f"Creating today's page")
+
+        # Construct the page title (e.g. "April 2, 2000")
+        page_title = today.strftime("%B %e, %Y")
+
+        res = self.client.pages.create(
+            parent={"page_id": journal_page.id, "type": "page_id"},
+            properties={
+                "title": {
+                    "type": "title",
+                    "title": [
+                        {
+                            "type": "text",
+                            "text": {
+                                "content": page_title
+                            }
+                        }
+                    ]
+                }
+            }
+        )
+
     async def trigger(self, entry_insertion_log: list[EntryInsertionLog]):
         journal_page, subpages = await self.get_pages()
+
+        await self.try_create_day_page(journal_page, subpages)
 
         # # Find the page with the plaintext title: "Test"
         # test_subpage = None
