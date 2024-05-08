@@ -1,6 +1,4 @@
 from notion_client import Client
-from notion2markdown.notion import NotionClient
-from notion2markdown.json2md import JsonToMdConverter
 from pydantic import BaseModel, Field
 import datetime
 
@@ -38,8 +36,6 @@ class NotionInputHandler(InputHandler):
         self.config = config
 
         self.client = Client(auth=config.auth_token)
-        # self.third_party_client = NotionClient(token=config.auth_token)  # Used to get the raw blocks
-        # self.json_to_md_converter = JsonToMdConverter()
 
         self.init_database()
 
