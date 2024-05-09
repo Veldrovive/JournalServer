@@ -14,6 +14,10 @@ from notion_client.helpers import iterate_paginated_api as paginate
 
 from jserver.entries import Entry, TextEntry, GenericFileEntry, ImageFileEntry, VideoFileEntry, AudioFileEntry, PDFileEntry
 from jserver.utils.file_metadata import extract_file_metadata
+from jserver.utils.hashers import *
+
+from jserver.utils.logger import setup_logging
+logger = setup_logging(__name__)
 
 from typing import Literal, Any, ClassVar
 
@@ -111,11 +115,15 @@ class NotionPage(BaseModel):
         If not then we use the created time
         """
         tzinfo = datetime.datetime.now().astimezone().tzinfo
-        match = re.match(r"(\w+) (\d+), (\d+)", self.plaintext_title)
+        match = re.match(r"(\w+) +(\d+),? +(\d+)", self.plaintext_title)
         if match is not None:
             month, day, year = match.groups()
+            day = int(day)
+            year = int(year)
+            if year < 1000:  # You probably aren't inventing algebra right now
+                year += 2000
             month = datetime.datetime.strptime(month, "%B").month
-            created_time_dt = datetime.datetime(int(year), month, int(day), tzinfo=tzinfo)
+            created_time_dt = datetime.datetime(year, month, day, tzinfo=tzinfo)
             start_time = created_time_dt.replace(hour=0, minute=0, second=0, microsecond=0)
         else:
             created_time_dt = datetime.datetime.fromtimestamp(self.created_time_ms / 1000, tz=tzinfo)
@@ -155,6 +163,15 @@ class NotionBlock(BaseModel):
         """
         return int(dateutil.parser.parse(self.created_time).timestamp() * 1000)
 
+    @property
+    def data_hash(self) -> str:
+        """
+        Returns a hash of the data of the block.
+        Used to check for small changes within a minute that dont effect the last edited time
+        This is a notion API quirk that means we need an alternative way to check if the block has changed besides the last edited time
+        """
+        return ""
+
     def cleanup(self):
         """
         Cleans up any temporary files
@@ -182,35 +199,63 @@ class NotionParagraphBlock(NotionBlock):
     type: Literal["paragraph"] = "paragraph"
     paragraph: NotionRichTextData = Field(..., description="The paragraph data of the block")
 
+    @property
+    def data_hash(self) -> str:
+        return hash_text(self.paragraph.markdown_text)
+
 class NotionHeadingOneBlock(NotionBlock):
     _type: ClassVar[str] = "heading_1"
     type: Literal["heading_1"] = "heading_1"
     heading_1: NotionRichTextData = Field(..., description="The heading 1 data of the block")
+
+    @property
+    def data_hash(self) -> str:
+        return hash_text(self.heading_1.markdown_text)
 
 class NotionHeadingTwoBlock(NotionBlock):
     _type: ClassVar[str] = "heading_2"
     type: Literal["heading_2"] = "heading_2"
     heading_2: NotionRichTextData = Field(..., description="The heading 2 data of the block")
 
+    @property
+    def data_hash(self) -> str:
+        return hash_text(self.heading_2.markdown_text)
+
 class NotionHeadingThreeBlock(NotionBlock):
     _type: ClassVar[str] = "heading_3"
     type: Literal["heading_3"] = "heading_3"
     heading_3: NotionRichTextData = Field(..., description="The heading 3 data of the block")
+
+    @property
+    def data_hash(self) -> str:
+        return hash_text(self.heading_3.markdown_text)
 
 class NotionBulletedListBlock(NotionBlock):
     _type: ClassVar[str] = "bulleted_list_item"
     type: Literal["bulleted_list_item"] = "bulleted_list_item"
     bulleted_list_item: NotionRichTextData = Field(..., description="The bulleted list data of the block")
 
+    @property
+    def data_hash(self) -> str:
+        return hash_text(self.bulleted_list_item.markdown_text)
+
 class NotionNumberedListBlock(NotionBlock):
     _type: ClassVar[str] = "numbered_list_item"
     type: Literal["numbered_list_item"] = "numbered_list_item"
     numbered_list_item: NotionRichTextData = Field(..., description="The numbered list data of the block")
 
+    @property
+    def data_hash(self) -> str:
+        return hash_text(self.numbered_list_item.markdown_text)
+
 class NotionQuoteBlock(NotionBlock):
     _type: ClassVar[str] = "quote"
     type: Literal["quote"] = "quote"
     quote: NotionRichTextData = Field(..., description="The quote data of the block")
+
+    @property
+    def data_hash(self) -> str:
+        return hash_text(self.quote.markdown_text)
 
 class NotionFileData(BaseModel):
     caption: list[AllRichTextItems] = Field([], description="The caption of the image", exclude=True)
@@ -285,6 +330,14 @@ class NotionImageBlock(NotionBlock):
     type: Literal["image"] = "image"
     image: NotionFileData = Field(..., description="The image data of the block")
 
+    @property
+    def data_hash(self) -> str:
+        """
+        We has the caption text along with the file type
+        We can't hash the url because it changes every time the file is downloaded
+        """
+        return hash_text(self.image.markdown_caption + self.image.type)
+
     def cleanup(self):
         self.image.remove_temp_file()
 
@@ -292,6 +345,14 @@ class NotionVideoBlock(NotionBlock):
     _type: ClassVar[str] = "video"
     type: Literal["video"] = "video"
     video: NotionFileData = Field(..., description="The video data of the block")
+
+    @property
+    def data_hash(self) -> str:
+        """
+        We has the caption text along with the file type
+        We can't hash the url because it changes every time the file is downloaded
+        """
+        return hash_text(self.video.markdown_caption + self.video.type)
 
     def cleanup(self):
         self.video.remove_temp_file()
@@ -301,6 +362,14 @@ class NotionAudioBlock(NotionBlock):
     type: Literal["audio"] = "audio"
     audio: NotionFileData = Field(..., description="The audio data of the block")
 
+    @property
+    def data_hash(self) -> str:
+        """
+        We has the caption text along with the file type
+        We can't hash the url because it changes every time the file is downloaded
+        """
+        return hash_text(self.audio.markdown_caption + self.audio.type)
+
     def cleanup(self):
         self.audio.remove_temp_file()
 
@@ -308,6 +377,14 @@ class NotionGenericFileBlock(NotionBlock):
     _type: ClassVar[str] = "file"
     type: Literal["file"] = "file"
     file: NotionFileData = Field(..., description="The file data of the block")
+
+    @property
+    def data_hash(self) -> str:
+        """
+        We has the caption text along with the file type
+        We can't hash the url because it changes every time the file is downloaded
+        """
+        return hash_text(self.file.markdown_caption + self.file.type)
 
     def cleanup(self):
         self.file.remove_temp_file()
@@ -319,6 +396,10 @@ class NotionEquationBlock(NotionBlock):
     _type: ClassVar[str] = "equation"
     type: Literal["equation"] = "equation"
     equation: NotionEquationData = Field(..., description="The equation data of the block")
+
+    @property
+    def data_hash(self) -> str:
+        return hash_text(self.equation.expression)
 
 class NotionCodeData(BaseModel):
     caption: list[AllRichTextItems] = Field([], description="The caption of the code block", exclude=True)
@@ -346,6 +427,10 @@ class NotionCodeBlock(NotionBlock):
     type: Literal["code"] = "code"
     code: NotionCodeData = Field(..., description="The code data of the block")
 
+    @property
+    def data_hash(self) -> str:
+        return hash_text(self.code.markdown_text + self.code.language)
+
 ArbitraryNotionBlockType = NotionParagraphBlock | NotionHeadingOneBlock | NotionHeadingTwoBlock | NotionHeadingThreeBlock | \
     NotionBulletedListBlock | NotionNumberedListBlock | NotionQuoteBlock | NotionImageBlock | NotionVideoBlock | \
     NotionAudioBlock | NotionGenericFileBlock | NotionEquationBlock | NotionCodeBlock
@@ -370,11 +455,18 @@ class NotionEntry(BaseModel):
     seq_id: int | None = Field(None, description="Defines where in a group the entry should be placed. Should be unique within a group")
     notion_blocks: list[ArbitraryNotionBlockType] = Field([], description="The blocks of the entry")
 
+    @property
+    def data_hash(self) -> str:
+        """
+        Returns a combined hash of the data of the entry and the sequence id
+        """
+        return hash_text("".join([block.data_hash for block in self.notion_blocks]) + str(self.seq_id))
+
 def create_notion_entry(blocks: list[NotionBlock], seq_id: int, group_id: str, start_time_override: int | None = None):
     """
     Uses the content of the notion blocks to find the values of the notion entry metadata
     """
-    print(f"Creating notion entry with {len(blocks)} blocks", [block.type for block in blocks])
+    logger.debug(f"Creating notion entry with {len(blocks)} blocks", [block.type for block in blocks])
     # The representative UUID is the type of the first block "_" id of the first block
     rep_uuid = f"{blocks[0].type}_{blocks[0].id}"
 
@@ -415,7 +507,7 @@ def create_notion_entry(blocks: list[NotionBlock], seq_id: int, group_id: str, s
 
     last_updated_time = max([block.last_edit_time_ms for block in blocks])
 
-    print(f"Start time: {start_time}, duration: {duration}, latitude: {latitude}, longitude: {longitude}, seq_id: {seq_id}")
+    logger.debug(f"Start time: {start_time}, duration: {duration}, latitude: {latitude}, longitude: {longitude}, seq_id: {seq_id}")
     return NotionEntry(
         rep_uuid=rep_uuid,
         group_id=group_id,
@@ -449,10 +541,13 @@ def get_page_blocks(client: Client, page_block_id: str) -> list[NotionBlock]:
                     break
                 except ValidationError as e:
                     import json
-                    print(f"Error validating block {i}: {json.dumps(block_json, indent=2)}")
+                    logger.warning(f"Error validating block {i}: {json.dumps(block_json, indent=2)}")
                     raise e
         else:
-            raise ValueError(f"Block type {block_json['type']} not recognized")
+            # Skip the block and log an error
+            import json
+            logger.error(f"Could not find block type for block {i}: {json.dumps(block_json, indent=2)}")
+            # raise ValueError(f"Block type {block_json['type']} not recognized")
 
     return blocks
 
@@ -669,7 +764,7 @@ def resolve_monotonicity(notion_entries: list[NotionEntry], day_start_ms: int, d
     cur_time = -1
     for i, entry in enumerate(notion_entries):
         if entry.start_time < day_start_ms or entry.start_time > day_end_ms:
-            print(f"Entry {i} (time: {entry.start_time}) falls outside of the day range ({day_start_ms} - {day_end_ms}). Setting start time to {cur_time}")
+            logger.warning(f"Entry {i} (time: {entry.start_time}) falls outside of the day range ({day_start_ms} - {day_end_ms}). Setting start time to {cur_time}")
             entry.start_time = cur_time
         elif entry.start_time < cur_time:
             # Iterate backwards to find the previous entry with a lower timestamp

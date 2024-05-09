@@ -170,7 +170,7 @@ def extract_file_metadata(file_path) -> tuple[datetime, dict, int]:
     except Exception as e:
         print(f"Error reading file metadata for {file_path}: {e}")
 
-    print("File Metadata:", creation_time, location_data, duration)
+    # print("File Metadata:", creation_time, location_data, duration)
     return creation_time, location_data, duration
 
 
