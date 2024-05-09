@@ -561,6 +561,16 @@ block_type_clusters = [
     ['file']
 ]
 
+# We also define whether each cluster type is allowed to be clustered together into a single entry
+# Files are not clustered, but text may be
+clustering_allowed = [
+    True,
+    False,
+    False,
+    False,
+    False
+]
+
 def get_cluster_idx(block_type: str) -> int:
         for i, cluster in enumerate(block_type_clusters):
             if block_type in cluster:
@@ -740,7 +750,7 @@ def split_page_blocks(page_blocks: list[NotionBlock], day_start_time_ms: int, da
             block_cluster = get_cluster_idx(block.type)
             if cur_block_cluster is None:
                 cur_block_cluster = block_cluster
-            elif cur_block_cluster != block_cluster:
+            elif cur_block_cluster != block_cluster or not clustering_allowed[block_cluster]:
                 # We have a new block cluster. This marks the end of the current entry
                 new_notion_entry = create_notion_entry(cur_notion_entry_blocks, len(notion_entries), group_id, start_time_override)
                 notion_entries.append(new_notion_entry)

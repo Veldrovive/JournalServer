@@ -194,9 +194,20 @@ class NotionInputHandler(InputHandler):
         logger.info(f"Getting blocks")
         blocks_res = get_page_blocks(self.client, page.id)
 
+        logger.debug("\n\nBlock Data:")
+        for i, block in enumerate(blocks_res):
+            logger.debug(f"Block {i}: {block}")
+        logger.debug("\n\n")
+
         logger.info(f"Splitting blocks")
         split_blocks = split_page_blocks(blocks_res, start_time_ms, end_time_ms, f"notion_page_{page.id}")
         logger.info(f"Got {len(split_blocks)} notion entries")
+
+        logger.debug("\n\nSplit Block Data:")
+        for i, block in enumerate(split_blocks):
+            logger.debug(f"Block {i}: {block}")
+        logger.debug("\n\n")
+
         logger.info("Resolving monotonicity")
         resolved_blocks = resolve_monotonicity(split_blocks, start_time_ms, end_time_ms)
 
