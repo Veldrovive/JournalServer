@@ -727,7 +727,7 @@ def split_page_blocks(page_blocks: list[NotionBlock], day_start_time_ms: int, da
     cur_notion_entry_blocks = []
     notion_entries = []
     start_time_override = None
-    for block in page_blocks:
+    for i, block in enumerate(page_blocks):
         if block.type == "paragraph" and len(block.paragraph.rich_text) == 0:
             # We have a blank paragraph block. This marks the end of the current entry
             if len(cur_notion_entry_blocks) > 0:
@@ -756,7 +756,15 @@ def split_page_blocks(page_blocks: list[NotionBlock], day_start_time_ms: int, da
                 notion_entries.append(new_notion_entry)
                 cur_notion_entry_blocks = []
                 cur_block_cluster = block_cluster
-                start_time_override = new_notion_entry.start_time  # If there is not a gap, we want to keep the same start time. This means text immediately following an image will have the same start time as the image
+
+                next_block = page_blocks[i + 1] if i + 1 < len(page_blocks) else None
+                next_cluster = get_cluster_idx(next_block.type) if next_block is not None else None
+                next_is_text = next_cluster == 0 if next_cluster is not None else False
+                if next_is_text:
+                    # If the next block is text, we want to keep the same start time
+                    start_time_override = new_notion_entry.start_time  # If there is not a gap, we want to keep the same start time. This means text immediately following an image will have the same start time as the image
+                else:
+                    start_time_override = None  # Otherwise the next block will have a new start time
             cur_notion_entry_blocks.append(block)
     if len(cur_notion_entry_blocks) > 0:
         # This shouldn't actually happen because notion entries are always ended by a blank paragraph block
