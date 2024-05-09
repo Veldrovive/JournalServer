@@ -239,7 +239,7 @@ class NotionInputHandler(InputHandler):
         logger.info(f"Creating today's page")
 
         # Construct the page title (e.g. "April 2, 2000")
-        page_title = today.strftime("%B%e, %Y")
+        page_title = today.strftime("%B %e, %Y")
 
         res = self.client.pages.create(
             parent={"page_id": journal_page.id, "type": "page_id"},
