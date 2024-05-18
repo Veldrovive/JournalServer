@@ -4,5 +4,6 @@ from .day_one_handler_config import DayOneHandlerConfig
 from .sensor_info_handler_config import SensorInfoHandlerConfig
 from .fitbit_api_handler_config import FitbitAPIHandlerConfig
 from .notion_handler_config import NotionHandlerConfig
+from .evernote_input_handler_config import EvernoteAPIHandlerConfig
 
-AllInputHandlerConfig = TestInputHandlerConfig | DayOneHandlerConfig | SensorInfoHandlerConfig | FitbitAPIHandlerConfig | NotionHandlerConfig
+AllInputHandlerConfig = TestInputHandlerConfig | DayOneHandlerConfig | SensorInfoHandlerConfig | FitbitAPIHandlerConfig | NotionHandlerConfig | EvernoteAPIHandlerConfig

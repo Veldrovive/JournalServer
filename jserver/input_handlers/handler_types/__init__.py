@@ -8,6 +8,7 @@ from .day_one_input_handler import DayOneInputHandler
 from .sensor_info_input_handler import SensorInfoInputHandler
 from .fitbit_api_input_handler import FitbitAPIInputHandler
 from .notion_input_handler import NotionInputHandler
+from .evernote_input_handler import EvernoteInputHandler
 
 from typing import Callable
 
@@ -25,6 +26,8 @@ def get_input_handler_constructor(handler_config: AllInputHandlerConfig):
         return FitbitAPIInputHandler
     elif isinstance(handler_config, NotionHandlerConfig):
         return NotionInputHandler
+    elif isinstance(handler_config, EvernoteAPIHandlerConfig):
+        return EvernoteInputHandler
     else:
         raise ValueError(f"Unknown input handler config type: {handler_config}")
 
@@ -43,5 +46,7 @@ def construct_input_handler(handler_config: AllInputHandlerConfig, on_entries_in
         return FitbitAPIInputHandler(handler_id, handler_config, on_entries_inserted_cb)
     elif isinstance(handler_config, NotionHandlerConfig):
         return NotionInputHandler(handler_id, handler_config, on_entries_inserted_cb)
+    elif isinstance(handler_config, EvernoteAPIHandlerConfig):
+        return EvernoteInputHandler(handler_id, handler_config, on_entries_inserted_cb)
     else:
         raise ValueError(f"Unknown input handler config type: {handler_config}")

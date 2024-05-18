@@ -584,7 +584,6 @@ def parse_date_block(text: str) -> int | None:
 
     Returns an offset in milliseconds since the start of the day.
     """
-    # Adding optional seconds to the regex and improving the AM/PM detection
     match = re.match(r"(\d{1,2}):(\d{2})(?::(\d{2}))?\s?(AM|PM|am|pm)?", text, re.IGNORECASE)
     if match is None:
         return None

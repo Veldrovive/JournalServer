@@ -115,12 +115,19 @@ class EntryManager:
 
         return existing_entry is not None
 
+    def get_group_entry_ids(self, group_id: str) -> list[EntryUUID]:
+        """
+        Returns a list of entry ids that are part of a group
+        """
+        output_filter = OutputFilter(group_ids=[group_id])
+        entries = self.rmanager.search_entries(output_filter)
+        return entries
+
     def delete_group(self, group_id: str):
         """
         Deletes all entries that are part of a group
         """
-        output_filter = OutputFilter(group_ids=[group_id])
-        entries = self.rmanager.search_entries(output_filter)
+        entries = self.get_group_entry_ids(group_id)
         for entry_uuid in entries:
             self.delete_entry(entry_uuid)
 

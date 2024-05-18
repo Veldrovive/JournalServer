@@ -15,6 +15,8 @@ requirements = [
     "tcxreader>=0.4.0,<0.5.0",
     "python-multipart>=0.0.8,<0.1.0",
     "notion-client>=2.2.0,<2.3.0",
+    "lxml>=5.2.0,<5.3.0",
+    "markdownify>=0.12.0,<0.13.0",
 
     # File metadata extraction
     "exifread>=3.0.0,<4.0.0",
