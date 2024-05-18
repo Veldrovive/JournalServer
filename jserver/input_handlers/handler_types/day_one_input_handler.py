@@ -60,29 +60,44 @@ def extract_media_info(s):
         return media_type, media_id
     return None
 
-def string_to_timedelta_and_clean(s):
+def string_to_timedelta_and_clean(text: str) -> int | None:
     """
-    Takes a string with a timestamp at the start in the form H:MM or HH:MM and returns a timedelta object
-    that represents the time and the string with the timestamp removed
-    """
-    # Regular expression to match the timestamp pattern at the start of the string
-    pattern = r"^(\d{1,2}):(\d{2})(\s*[\r\n]?)"
-    match = re.match(pattern, s)
+    If the string is H:MM or HH:MM, optionally followed by :SS (seconds), then we return the time in milliseconds since the epoch.
+    We also accept (H)H:MM:SS AM/PM or (H)H:MM:SSAM/PM. AM and PM may or may not be capitalized.
 
-    # Check if pattern is matched
+    Returns a timedelta object representing the time and the cleaned string with the timestamp removed
+    """
+    pattern = r"^(\d{1,2}):(\d{2})(?::(\d{2}))?\s?(AM|PM|am|pm)?"
+    match = re.match(pattern, text, re.IGNORECASE)
+
     if match:
-        # Extract hours and minutes
-        hours, minutes = map(int, match.groups()[:2])
+        hours, minutes, seconds = match.groups()[:3]
+        am_pm = match.group(4)
 
-        # Create a timedelta object
-        time_delta = timedelta(hours=hours, minutes=minutes)
+        # Convert hours, minutes, and seconds to integers, handling None for seconds
+        hours, minutes = int(hours), int(minutes)
+        seconds = int(seconds) if seconds is not None else 0
 
-        # Remove the matched timestamp and optional newline from the original string
-        cleaned_string = re.sub(pattern, '', s, count=1)
+        # Validate time values based on AM/PM presence
+        if am_pm:
+            # 12-hour format with AM/PM
+            if not (1 <= hours <= 12) or not (0 <= minutes < 60) or not (0 <= seconds < 60):
+                return None, text
+            if am_pm.lower() == "pm" and hours != 12:
+                hours += 12
+            elif am_pm.lower() == "am" and hours == 12:
+                hours = 0
+        else:
+            # 24-hour format without AM/PM
+            if not (0 <= hours < 24) or not (0 <= minutes < 60) or not (0 <= seconds < 60):
+                return None, text
 
-        return time_delta, cleaned_string
-    else:
-        return None, s
+        # Create timedelta object
+        time = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+        cleaned_text = re.sub(pattern, '', text, count=1).strip()
+        return time, cleaned_text
+
+    return None, text
 
 class DayOneInputHandler(InputHandler):
     _requires_db_connection = False
@@ -147,7 +162,7 @@ class DayOneInputHandler(InputHandler):
         """
         # We will extract the zip file to a temporary directory
         self.trigger_stage = "Extracting"
-        asyncio.sleep(2)  # Sleep for a couple seconds to allow other processes to finish
+        await asyncio.sleep(2)  # Sleep for a couple seconds to allow other processes to finish
         with tempfile.TemporaryDirectory() as temp_dir:
             dir_path = Path(temp_dir)
             # Extract the zip file
@@ -172,7 +187,7 @@ class DayOneInputHandler(InputHandler):
             entries = journal_data.get("entries", [])
             num_entries = len(entries)
             for i, entry in enumerate(entries):
-                asyncio.sleep(0)  # Yield to other tasks
+                await asyncio.sleep(0)  # Yield to other tasks
                 if "text" not in entry:
                     logger.debug("Encountered empty entry")
                     continue
